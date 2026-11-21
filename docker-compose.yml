@@ -1,7 +1,7 @@
 services:
-  autoMusicDown:
-    image: leonautilus/auto-music-downloader:latest
-    container_name: auto-music-downloader
+  musicpilot:
+    image: leonautilus/musicpilot:latest
+    container_name: musicpilot
     restart: always
     volumes:
       - ./downloads:/app/downloads           # 下载目录映射（主机目录可自定义）

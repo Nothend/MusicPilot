@@ -18,9 +18,9 @@
 
    ```yaml
    services:
-     autoMusicDown:
-       image: leonautilus/auto-music-downloader:latest
-       container_name: auto-music-downloader
+     musicpilot:
+       image: leonautilus/musicpilot:latest
+       container_name: musicpilot
        restart: always
        volumes:
          - ./config.yaml:/app/config.yaml:ro    # 配置（只读）

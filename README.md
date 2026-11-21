@@ -1,6 +1,6 @@
 # 佛系云音乐自动下载
 
-[![Docker Hub](https://img.shields.io/docker/pulls/leonautilus/auto-music-downloader?logo=docker)](https://hub.docker.com/r/leonautilus/auto-music-downloader)
+[![Docker Hub](https://img.shields.io/docker/pulls/leonautilus/musicpilot?logo=docker)](https://hub.docker.com/r/leonautilus/musicpilot)
 
 把网易云音乐里你喜欢的歌，**自动下载成带歌词、封面、歌手信息的无损音乐文件**，放进你自己的音乐库（NAS、Navidrome、Plex 等）。
 不用每天手动点下载，也不会重复下载已经有的歌。
@@ -37,9 +37,9 @@
 
 ```yaml
 services:
-  auto-music-downloader:
-    image: leonautilus/auto-music-downloader:latest
-    container_name: auto-music-downloader
+  musicpilot:
+    image: leonautilus/musicpilot:latest
+    container_name: musicpilot
     restart: always
     ports:
       - "5119:5119"                 # 网页端口
@@ -114,7 +114,7 @@ docker compose pull        # 拉取最新镜像
 docker compose up -d       # 用新镜像重建容器
 ```
 
-想固定或回滚到某个版本，把 `image` 末尾的 `:latest` 换成具体版本号，例如 `leonautilus/auto-music-downloader:1.1.2`。
+想固定或回滚到某个版本，把 `image` 末尾的 `:latest` 换成具体版本号，例如 `leonautilus/musicpilot:1.0.0`。
 升级前建议先备份 `data` 目录。
 
 ---
