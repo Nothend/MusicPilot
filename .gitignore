@@ -1,5 +1,6 @@
 #忽略虚拟环境目录和下载、日志等目录
 .venv/
+venv/
 downloads/
 logs/
 
@@ -11,3 +12,14 @@ __pycache__
 
 .vscode/
 .idea/
+# Web 控制台数据（含登录 cookie）
+data/
+
+# 打包产物
+dist/
+.spike.env
+.spike-lb.env
+
+# 仅留在本地的内部文档（不上传 GitHub / 不进镜像）
+PRD.md
+DESIGN-LB.md
