@@ -28,6 +28,7 @@ DURATION_TOLERANCE_S = 20     # 与目标时长相差超过它，视为不同录
 SAME_RECORDING_S = 5          # 无目标时长时，候选之间相差不超过它，视为同一录音的重复文件
 FUZZY_THRESHOLD = 92
 FUZZY_MIN_LEN = 5             # 标准化后短于此的标题只接受完全相同，避免误判
+ALBUM_DURATION_TOLERANCE_S = 60   # 歌手+歌名+专辑都相同（版本词也相同）时，时长容差放宽到它：同一首歌的不同母带/静音长度
 SOFT_DURATION_TOLERANCE_S = 45  # 「软版本词」（Radio Edit 等）会比原版短不少，时长容差放宽到它
 CHARVAR_MIN_LEN = 4           # 异体字（单字之差）规则只用于不短于此的标题
 CHARVAR_MAX_DUR_S = 2         # 且双方时长必须都已知并几乎相同
@@ -135,8 +136,8 @@ _ARTIST_SPLIT = re.compile(r"\s*(?:&|/|,|;|、|\+|＋|•)\s*|\s+(?:feat\.?|ft\.
 
 
 _CJK = "\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af"
-# 「F.I.R 飞儿乐团」「Jay Chou 周杰伦」：拉丁名与中日韩名之间只隔空白 → 视为同一歌手的两种写法（别名）
-_SCRIPT_GAP = re.compile(rf"(?<=[a-z0-9.!?])\s+(?=[{_CJK}])|(?<=[{_CJK}])\s+(?=[a-z0-9])")
+# 「F.I.R 飞儿乐团」「Jay Chou 周杰伦」「F.I.R.飞儿乐团」：拉丁名与中日韩名相接（空白可有可无）→ 视为同一歌手的两种写法（别名）
+_SCRIPT_GAP = re.compile(rf"(?<=[a-z0-9.!?])\s*(?=[{_CJK}])|(?<=[{_CJK}])\s*(?=[a-z0-9])")
 
 
 @functools.lru_cache(maxsize=100_000)
@@ -148,7 +149,7 @@ def artist_set(name: str) -> FrozenSet[str]:
     for p in _ARTIST_SPLIT.split(f):
         parts.add(compact(p))
         if _SCRIPT_GAP.search(p):
-            parts.update(compact(x) for x in _SCRIPT_GAP.split(p))
+            parts.update(c for c in (compact(x) for x in _SCRIPT_GAP.split(p)) if len(c) >= 2)   # 单字母别名太容易撞名
     parts.add(compact(f))
     parts.discard("")
     return frozenset(parts)
@@ -186,6 +187,7 @@ class Target:
     artists: List[str] = field(default_factory=list)   # 歌单里的歌手拆分（artist_credit_name），可空
     mbid: str = ""
     duration_s: Optional[float] = None
+    album: str = ""
 
 
 @dataclass
@@ -280,6 +282,12 @@ def _title_level(t: Target, f: LocalFile, lenient: bool = True) -> Optional[str]
     return None
 
 
+def same_album(a: str, b: str) -> bool:
+    """专辑名标准化后相同（都非空）。"""
+    ca, cb = compact(fold(a)), compact(fold(b))
+    return bool(ca) and ca == cb
+
+
 def _dur_diff(t: Target, f: LocalFile) -> Optional[float]:
     if t.duration_s is None or f.duration is None:
         return None
@@ -332,6 +340,8 @@ def match(index: LocalIndex, t: Target, libraries: Tuple[str, ...] = ("main", "d
                 continue
             d = _dur_diff(t, f)
             limit = SOFT_DURATION_TOLERANCE_S if level == "variant" else DURATION_TOLERANCE_S
+            if level in ("exact", "normalized") and same_album(t.album, f.album):
+                limit = max(limit, ALBUM_DURATION_TOLERANCE_S)
             if d is not None and d > limit:
                 near.append(f)          # 歌名吻合但时长差太多：多半是另一个版本
                 continue

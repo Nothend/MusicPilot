@@ -221,7 +221,8 @@ def target_of(row) -> Target:
     return Target(artist=row["artist"], title=row["title"],
                   artists=[a for a in json.loads(row["artists_json"] or "[]") if a],
                   mbid=row["recording_mbid"] or "",
-                  duration_s=(row["duration_ms"] / 1000.0) if row["duration_ms"] else None)
+                  duration_s=(row["duration_ms"] / 1000.0) if row["duration_ms"] else None,
+                  album=row["album"] or "")
 
 
 # ---------------------------------------------------------------- 清理 / 回收站
@@ -296,3 +297,36 @@ def item_mbids_by_nd_id(db: Database) -> Dict[str, str]:
             "JOIN tracks t ON t.id=i.track_id WHERE i.local_file_id IS NOT NULL AND t.recording_mbid <> '' "
             "AND i.state IN ('LOCAL_MAIN','LOCAL_DISCOVERY','PROMOTING','PROMOTED')").fetchall()
     return {r["fid"]: r["mbid"] for r in rows}
+
+
+# ---------------------------------------------------------------- 疑似与主库重复
+def add_dup_suspects(db: Database, item_id: int, rows: Iterable[tuple], now: Optional[datetime] = None) -> int:
+    """rows: (主库歌曲 id, level, 时长差)。已存在的（含已忽略的）不动。返回新增条数。"""
+    ts, n = now_iso(now), 0
+    with db.transaction() as conn:
+        for sid, level, dur_diff in rows:
+            n += conn.execute("INSERT OR IGNORE INTO dup_suspects(item_id, main_nd_song_id, level, dur_diff, created_at) "
+                              "VALUES(?,?,?,?,?)", (item_id, sid, level, dur_diff, ts)).rowcount
+    return n
+
+
+def dup_suspects(db: Database, item_id: int) -> List[sqlite3.Row]:
+    """条目未被忽略的疑似重复（主库文件信息来自本地索引）。"""
+    with db.lock:
+        return db.conn.execute(
+            "SELECT d.main_nd_song_id, d.level, d.dur_diff, f.artist, f.title, f.album, f.duration, f.size, f.suffix, f.starred "
+            "FROM dup_suspects d JOIN local_files f ON f.nd_song_id=d.main_nd_song_id "
+            "WHERE d.item_id=? AND d.dismissed=0 AND f.library='main' ORDER BY d.dur_diff IS NULL, d.dur_diff, d.main_nd_song_id",
+            (item_id,)).fetchall()
+
+
+def dismiss_dup_suspects(db: Database, item_ids: Iterable[int]) -> None:
+    with db.transaction() as conn:
+        for i in item_ids:
+            conn.execute("UPDATE dup_suspects SET dismissed=1 WHERE item_id=?", (i,))
+
+
+def delete_dup_suspects(db: Database, item_ids: Iterable[int]) -> None:
+    with db.transaction() as conn:
+        for i in item_ids:
+            conn.execute("DELETE FROM dup_suspects WHERE item_id=?", (i,))

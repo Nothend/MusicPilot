@@ -100,10 +100,25 @@ def items(db: Database, batch_id: int, state: str = "") -> Dict[str, Any]:
             "promoted": r["state"] == ST.PROMOTED, "entered_discovery_at": r["entered_discovery_at"],
             "retry_count": r["retry_count"], "next_retry_at": r["next_retry_at"],
             "candidates": candidates(db, r["id"]) if r["state"] == ST.MULTIPLE_MATCH else [],
+            "dups": dup_view(db, r) if r["state"] == ST.LOCAL_DISCOVERY and r["local_file_id"] else [],
         })
     return {"batch": {"id": b["id"], "type": b["type"], "label": REC_LABELS.get(b["type"], b["type"]),
                       "date": (b["lb_date"] or "")[:10], "total": b["total"], "status": b["status"]},
             "counts": counts, "items": out}
+
+
+def dup_view(db: Database, it) -> List[Dict[str, Any]]:
+    """试听库这份与主库疑似重复的文件，两份的格式/时长/大小并排给页面比较。"""
+    sus = lb_repo.dup_suspects(db, it["id"])
+    if not sus:
+        return []
+    with db.lock:
+        mine = db.conn.execute("SELECT duration, size, suffix FROM local_files WHERE nd_song_id=?", (it["local_file_id"],)).fetchone()
+    new = {"duration": mine["duration"], "size": mine["size"], "suffix": mine["suffix"]} if mine else {}
+    return [{"main_id": r["main_nd_song_id"], "level": r["level"], "dur_diff": r["dur_diff"],
+             "main": {"artist": r["artist"], "title": r["title"], "album": r["album"], "duration": r["duration"],
+                      "size": r["size"], "suffix": r["suffix"], "starred": bool(r["starred"])},
+             "new": new} for r in sus]
 
 
 def candidates(db: Database, item_id: int) -> List[Dict[str, Any]]:
@@ -138,6 +153,12 @@ def item_action(db: Database, item_id: int, action: str, arg: str = "", now: Opt
         if it["state"] not in (ST.LOCAL_DISCOVERY, ST.PROMOTING):
             raise ValueError("只有试听库里的歌曲才需要「保留」")
         lb_repo.update_fields(db, item_id, keep=1 if action == "keep" else 0)
+
+    elif action == "dup_dismiss":
+        if not lb_repo.dup_suspects(db, item_id):
+            raise ValueError("这首歌没有待处理的疑似重复")
+        lb_repo.dismiss_dup_suspects(db, [g["id"] for g in lb_repo.items_sharing_file(db, it["local_file_id"])]
+                                     if it["local_file_id"] else [item_id])
 
     elif action == "retry":
         if it["state"] in RETRYABLE:

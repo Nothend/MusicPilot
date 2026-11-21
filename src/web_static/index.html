@@ -542,7 +542,7 @@ const ST_CLS = {LOCAL_MAIN: 'ok', LOCAL_DISCOVERY: 'ok', PROMOTED: 'ok', PROMOTI
 const KIND_ZH = {sync: '推荐同步', promote: '红心转正', cleanup: '过期清理', reindex: '同步索引', love: '红心同步', love_preview: '红心预览'};
 const RUN_ZH = {running: '运行中', done: '完成', failed: '失败', paused: '已暂停', interrupted: '被中断'};
 const RUN_CLS = {running: 'run', done: 'ok', failed: 'bad', paused: 'warn', interrupted: 'warn'};
-const REASON_ZH = {variant: '库里是电台版/单曲版，建议尽快替换为原版', not_found: '网易云没有这首', only_mp3: '只有 MP3（库只要无损）', no_copyright: '无版权/已下架', cooldown: '冷却期内不重复搜索',
+const REASON_ZH = {dup_resolved: '与主库重复，已保留主库那份', variant: '库里是电台版/单曲版，建议尽快替换为原版', not_found: '网易云没有这首', only_mp3: '只有 MP3（库只要无损）', no_copyright: '无版权/已下架', cooldown: '冷却期内不重复搜索',
   over_limit: '超出最大新下载数', promote_conflict: '主库已有同名文件，未转正', promote_error: '转正出错，将自动重试', expired: '试听期满已清理',
   exception: '处理出错', multiple: '本地有多个候选', download: '下载失败', api: '接口错误', invalid: '文件校验失败'};
 const STAT_ZH = {recommended: '推荐', downloaded: '新下载', local_main: '主库命中', local_discovery: '试听库命中', not_found: '未找到', failed: '失败',
@@ -686,16 +686,37 @@ async function listItems() {
       btns.push(`<button class="ghost sm" onclick="itemAct(${i.id},'retry')">重试</button>`);
     if (i.state === 'MULTIPLE_MATCH') btns.push(`<button class="sm" onclick="openCand(${i.id})">选择</button>`);
     return `<div class="rit"><div class="nm"><div><b>${esc(i.title)}</b></div><div class="sub">${esc(i.artist)}${i.album ? ' · ' + esc(i.album) : ''} · 推荐于 ${esc(i.recommended_at)}</div>
-      ${i.path ? `<div class="pth">${esc(i.path)}</div>` : ''}</div>
+      ${i.path ? `<div class="pth">${esc(i.path)}</div>` : ''}${dupHtml(i)}</div>
       <div class="stc"><span class="st ${ST_CLS[i.state] || ''}">${ST_ZH[i.state] || i.state}</span>
         ${i.starred ? '<span class="tag ok">♥ 红心</span>' : ''}${i.keep ? '<span class="tag">保留</span>' : ''}${i.promoted ? '<span class="tag ok">已转正</span>' : ''}
         ${reason ? `<div class="sub">${esc(reason)}</div>` : ''}</div>
       <div class="acts" style="margin:0">${btns.join('')}</div></div>`;
   }).join('') || '<div class="sub" style="padding:10px">没有符合条件的歌曲</div>';
 }
+const fmtDur = s => s ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : '时长未知';
+const fmtFile = f => `${esc((f.suffix || '?').toUpperCase())} · ${fmtDur(f.duration)} · ${f.size ? (f.size / 1048576).toFixed(1) + ' MB' : '大小未知'}`;
+function dupHtml(i) {
+  return (i.dups || []).map(d => `<div class="sub" style="margin-top:6px;padding:6px 8px;border:1px solid var(--bd,#d9a441);border-radius:6px">
+    <b>⚠ 疑似与主库重复</b>${d.level === 'near' ? '（歌名相同但时长/专辑对不上，请确认是不是同一首）' : ''}<br>
+    主库：${esc(d.main.artist)} - ${esc(d.main.title)}${d.main.album ? ' · ' + esc(d.main.album) : ''} · ${fmtFile(d.main)}${d.main.starred ? ' ♥' : ''}<br>
+    试听库：${fmtFile(d.new)}<br>
+    <button class="sm" onclick="dupAct(${i.id},'keep_new','${esc(d.main_id)}')">保留试听库这份</button>
+    <button class="ghost sm" onclick="dupAct(${i.id},'keep_main','${esc(d.main_id)}')">保留主库这份</button>
+    <button class="ghost sm" onclick="itemAct(${i.id},'dup_dismiss')">两份都留</button></div>`).join('');
+}
+async function dupAct(id, choice, mainId) {
+  const i = lstData[id], d = (i.dups || []).find(x => x.main_id === mainId);
+  const msg = choice === 'keep_new'
+    ? `保留试听库这份（${fmtFile(d.new)}），并把主库那份（${fmtFile(d.main)}）移入回收站。\n试听库这份会按命名规则移入主库；主库那份可在回收站里恢复，满保留天数后才会真正删除。\n主库里它的 .lrc/封面等附属文件不会动。转正失败时主库那份会原样放回。`
+    : `保留主库这份（${fmtFile(d.main)}），把试听库这份（${fmtFile(d.new)}）移入回收站（可恢复），推荐歌单改用主库那份。`;
+  if (await confirmBox(choice === 'keep_new' ? '用试听库这份替换主库' : '保留主库这份', `${i.artist} - ${i.title}\n${msg}`, '确定')) {
+    try { await api('/api/lb/action', {kind: 'dedup', item_id: id, choice, main_id: mainId}); toast('已开始处理，完成后刷新列表'); recShow('dash'); }
+    catch (e) { toast(e.busy ? '已有任务在运行，请等它结束：' + e.message : e.message); }
+  }
+}
 function setLstState(k) { lstState = k; listItems(); }
 async function itemAct(id, action, arg) {
-  try { await api('/api/lb/item', {id, action, arg: arg || ''}); toast(action === 'retry' ? '已加入重试，下次同步会处理' : '已更新'); listItems(); }
+  try { await api('/api/lb/item', {id, action, arg: arg || ''}); toast(action === 'retry' ? '已加入重试，下次同步会处理' : action === 'dup_dismiss' ? '已忽略，不再提示' : '已更新'); listItems(); }
   catch (e) { toast(e.message); }
 }
 function openCand(id) {

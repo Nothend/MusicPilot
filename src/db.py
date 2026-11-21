@@ -239,7 +239,25 @@ def _v6(conn: sqlite3.Connection) -> None:
         )""")
 
 
-MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6]
+def _v7(conn: sqlite3.Connection) -> None:
+    """v7：疑似与主库重复的试听库歌曲（供页面让用户选择保留哪一份）。
+
+    每行 = 一个试听库条目 + 一个疑似重复的主库文件（Navidrome 歌曲 id）。dismissed=1 表示用户选了「两份都留」，
+    以后不再提示；用户选定保留哪一份后，该条目的记录被删除。
+    """
+    conn.execute(
+        """CREATE TABLE dup_suspects (
+            item_id         INTEGER NOT NULL REFERENCES recommendation_items(id) ON DELETE CASCADE,
+            main_nd_song_id TEXT NOT NULL,
+            level           TEXT NOT NULL DEFAULT '',     -- 匹配级别；near = 歌名吻合但时长/专辑对不上
+            dur_diff        REAL,
+            dismissed       INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT NOT NULL,
+            PRIMARY KEY (item_id, main_nd_song_id)
+        )""")
+
+
+MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7]
 
 
 class DatabaseVersionError(RuntimeError):

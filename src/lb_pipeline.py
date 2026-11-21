@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+import lb_dedup
 import lb_playlist
 import lb_repo
 import lb_states as ST
@@ -118,6 +119,12 @@ def run_sync(d: SyncDeps) -> Dict[str, Any]:
     for bid in touched:
         lb_playlist.publish_batch(d.db, d.nd, bid, h.log, d.now())
         _maybe_finish_batch(d, bid)
+
+    # 6) 试听库里有哪些歌疑似和主库重复（只检测提示，不动文件）
+    n_dup = lb_dedup.detect(d.db, load_index(d.db), d.now())
+    if n_dup:
+        h.add("dup_suspects", n_dup)
+        h.log(f"发现 {n_dup} 处疑似与主库重复的歌曲，请到「推荐」页选择保留哪一份", "WARNING")
 
     if d.paused:
         h.status = "paused"

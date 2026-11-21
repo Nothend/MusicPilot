@@ -325,3 +325,33 @@ def test_variant_characters():
 def test_more_soft_phrases(t):
     assert M.is_soft_edition(t) and not M.is_soft_edition("Halo (Live)") and not M.is_soft_edition("Halo (Remix)")
     assert run([F("1", "A", t, dur=200)], artist="A", title="Halo", duration_s=200).level == "variant"
+
+
+# ---------------------------------------------------------------- 2026-11-21 真实漏判：歌手别名无空格 / 同专辑时长差
+def test_artist_alias_split_without_space():
+    assert "fir" in M.artist_set("F.I.R.飞儿乐团")
+    assert {"gem", "邓紫棋"} <= M.artist_set("G.E.M.邓紫棋")
+    assert "e" not in M.artist_set("E神")          # 单字母别名不收，免得撞名
+
+
+def test_fir_no_space_alias_matches_main():
+    r = run([F("m", "F.I.R.飞儿乐团", "月牙湾", dur=308, album="爱·歌姬")],
+            artist="F.I.R.", title="月牙灣", artists=["F.I.R."], duration_s=308, album="愛‧歌姬")
+    assert r.status == "main"
+
+
+def test_same_album_widens_duration_tolerance_to_60s():
+    files = [F("m", "毛不易", "像我这样的人", dur=239, album="平凡的一天")]
+    ok = run(files, artist="毛不易", title="像我这样的人", duration_s=207, album="平凡的一天")     # 差 32 秒
+    assert ok.status == "main"
+    far = run(files, artist="毛不易", title="像我这样的人", duration_s=170, album="平凡的一天")    # 差 69 秒
+    assert far.status == "none" and far.near_misses
+    other_album = run(files, artist="毛不易", title="像我这样的人", duration_s=207, album="别的专辑")
+    assert other_album.status == "none"              # 专辑不同：仍按 20 秒容差
+    no_album = run(files, artist="毛不易", title="像我这样的人", duration_s=207)
+    assert no_album.status == "none"
+
+
+def test_same_album_does_not_merge_live_version():
+    files = [F("m", "毛不易", "像我这样的人 (Live)", dur=239, album="平凡的一天")]
+    assert run(files, artist="毛不易", title="像我这样的人", duration_s=207, album="平凡的一天").status == "none"

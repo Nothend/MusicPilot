@@ -39,6 +39,7 @@ class PromoteDeps:
     nd: Any
     handle: RunHandle
     now: Callable[[], datetime] = datetime.now
+    restar: bool = True      # 转正后红心缺失是否补星。去重换文件（lb_dedup）时只有被替换的主库文件原本有红心才补
 
 
 def sync_starred_flags(db: Database, nd, discovery_folder_id: int) -> List[str]:
@@ -179,7 +180,7 @@ def finalize_promoting(d: PromoteDeps, main_dir: Path, force_scan: bool = False)
         if song is None:
             h.add("unresolved"); h.log(f"Navidrome 还没收录主库里的新文件：{who}（下次运行继续）", "WARNING")
             continue
-        restar = not song.starred
+        restar = d.restar and not song.starred
         if restar:                                         # 实测通常不会发生；缺失才补星
             d.nd.star(song.nd_song_id)
             h.add("restarred"); h.log(f"红心丢失，已补星：{who}", "WARNING")
@@ -187,7 +188,7 @@ def finalize_promoting(d: PromoteDeps, main_dir: Path, force_scan: bool = False)
             if restar:
                 lb_repo.record_promotion(db, it["id"], dst=str(dst), status="restarred", restar=True, now=d.now())
             lb_repo.set_state(db, it["id"], ST.PROMOTED, note="转正完成", now=d.now(), local_file_id=song.nd_song_id,
-                              starred=1, reason_kind="", reason="")
+                              starred=1 if (d.restar or song.starred) else 0, reason_kind="", reason="")
             if it["batch_id"] not in affected_batches:
                 affected_batches.append(it["batch_id"])
         _release_siblings(d, fid, song.nd_song_id, dst)

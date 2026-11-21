@@ -362,8 +362,15 @@ class App:
         if types is not None:
             if not isinstance(types, list) or not all(t in lb_settings.REC_TYPES for t in types):
                 raise ValueError("推荐类型不合法")
+        params = None
+        if kind == "dedup":
+            try:
+                params = {"item_id": int(body.get("item_id")), "choice": str(body.get("choice", "")),
+                          "main_id": str(body.get("main_id") or "")}
+            except (TypeError, ValueError):
+                raise ValueError("缺少条目编号")
         run_id = self.lb.start(kind, trigger="manual", types=types, scan=bool(body.get("scan")),
-                               dry_run=bool(body.get("dry_run")))
+                               dry_run=bool(body.get("dry_run")), params=params)
         return {"run_id": run_id}
 
     def lb_run_detail(self, run_id: int, after: int = 0) -> Dict[str, Any]:

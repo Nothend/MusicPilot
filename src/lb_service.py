@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional
 import lb_cleanup
 import lb_love
 import lb_pipeline
+import lb_dedup
 import lb_promote
 import lb_queries
 import lb_settings
@@ -28,10 +29,10 @@ from task_manager import RunHandle, TaskBusy, TaskManager
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("sync", "promote", "cleanup", "reindex", "love")
+KINDS = ("sync", "promote", "cleanup", "reindex", "love", "dedup")
 # 这些任务会改动库内容 / 下载 / 写 ListenBrainz：总开关关闭时拒绝
-GATED = ("sync", "promote", "cleanup")
-LABELS = {"sync": "推荐同步", "promote": "红心转正", "cleanup": "过期清理", "reindex": "同步索引", "love": "红心同步"}
+GATED = ("sync", "promote", "cleanup", "dedup")
+LABELS = {"sync": "推荐同步", "promote": "红心转正", "cleanup": "过期清理", "reindex": "同步索引", "love": "红心同步", "dedup": "重复去重"}
 LOVE_PREVIEW_KEY = "lb.love_preview"
 
 
@@ -101,26 +102,31 @@ class LbService:
         nd = s["navidrome"]
         if not (nd["url"] and nd["user"] and nd["password"]):
             raise NotReady("请先在设置里填写 Navidrome 地址、用户名和密码")
-        if kind in ("sync", "promote", "cleanup", "reindex") and (nd["main_folder_id"] is None or nd["discovery_folder_id"] is None):
+        if kind in ("sync", "promote", "cleanup", "reindex", "dedup") and (nd["main_folder_id"] is None or nd["discovery_folder_id"] is None):
             raise NotReady("请先在设置里选择 Navidrome 的主库和试听库（点「测试连接」后下拉选择）")
         if kind in ("sync", "love") and not (s["listenbrainz"]["username"] and s["listenbrainz"]["token"]):
             raise NotReady("请先在设置里填写 ListenBrainz 用户名和 Token")
 
     # ------------------------------------------------------------ 启动任务
     def start(self, kind: str, *, trigger: str = "manual", types: Optional[List[str]] = None,
-              scan: bool = False, dry_run: bool = False) -> int:
+              scan: bool = False, dry_run: bool = False, params: Optional[Dict[str, Any]] = None) -> int:
         """启动后台任务，返回运行 id。已有任务在跑 → TaskBusy；不满足条件 → NotReady（都是 ValueError 的子类/页面可读）。"""
         s = self.settings()
         self.check_ready(kind, s, dry_run=dry_run)
         label = LABELS[kind] + ("（预览）" if kind == "love" and dry_run else "")
+        if kind == "dedup":                                  # 先同步校验，错误立刻回给页面
+            p = params or {}
+            p["main_id"] = lb_dedup.validate(self.db, int(p.get("item_id") or 0), str(p.get("choice", "")),
+                                             str(p.get("main_id") or ""))
+            params = p
 
         def body(h: RunHandle) -> None:
-            self._execute(kind, s, h, types=types, scan=scan, dry_run=dry_run)
+            self._execute(kind, s, h, types=types, scan=scan, dry_run=dry_run, params=params or {})
 
         return self.tm.run_async(kind + ("_preview" if kind == "love" and dry_run else ""), trigger, body,
                                  on_done=lambda h, err: self._after(label, h, err))
 
-    def _execute(self, kind: str, s: Dict[str, Any], h: RunHandle, *, types, scan, dry_run) -> None:
+    def _execute(self, kind: str, s: Dict[str, Any], h: RunHandle, *, types, scan, dry_run, params=None) -> None:
         nd = self.nd_factory(s)
         if kind == "sync":
             delay = self.request_delay()
@@ -129,6 +135,10 @@ class LbService:
                                                       sleep=self.sleep, now=self.now, types=types))
         elif kind == "promote":
             lb_promote.run_promote(lb_promote.PromoteDeps(self.db, s, nd, h, now=self.now))
+        elif kind == "dedup":
+            p = params or {}
+            lb_dedup.run_dedup(lb_dedup.DedupDeps(self.db, s, nd, h, int(p["item_id"]), str(p["choice"]), str(p["main_id"]),
+                                                  now=self.now))
         elif kind == "cleanup":
             lb_cleanup.run_cleanup(lb_cleanup.CleanupDeps(self.db, s, nd, h, now=self.now))
         elif kind == "reindex":
@@ -166,11 +176,14 @@ class LbService:
             return f"已暂停：{h.summary}"
         parts = []
         for key, text in (("downloaded", "新下载"), ("promoted", "转正"), ("expired", "过期清理"), ("submitted", "提交红心"),
-                          ("moved", "移入主库")):
+                          ("moved", "移入主库"), ("dedup_kept_main", "去重（保留主库）"),
+                          ("dedup_replaced", "去重（替换主库）")):
             if st.get(key):
                 parts.append(f"{text} {st[key]} 首")
         if st.get("errors") or st.get("failed"):
             parts.append(f"出错/失败 {st.get('errors', 0) + st.get('failed', 0)} 首")
+        if st.get("dup_suspects"):
+            parts.append(f"{st['dup_suspects']} 首疑似与主库重复，请到「推荐」页选择保留哪一份")
         if not parts:
             return ""
         if st.get("not_found"):
