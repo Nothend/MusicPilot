@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import lb_pipeline
+import lb_playlist
 import lb_repo
 import lb_settings
 import lb_states as ST
@@ -207,7 +208,7 @@ def test_no_playlist_for_a_type_is_normal_not_an_error(env):
     run = env.sync()                                  # LB 什么都没有（如目前没有 Daily Jams）
     assert run["status"] == "done"
     msgs = [x["msg"] for x in env.tm.logs(run["id"])]
-    assert any("Daily Jams" in m and "暂无" in m for m in msgs)
+    assert any("每日熟悉" in m and "暂无" in m for m in msgs)
 
 
 def test_disabled_type_and_types_filter(env):
@@ -494,3 +495,16 @@ def test_hard_version_in_library_still_downloads_original(env):
     env.lb.add("weekly_jams", "pl-1", [lbtrack(1)])
     env.sync()
     assert env.adapter.calls == ["Song 1"]            # Live ≠ 原版：原版照常下载
+
+
+def test_custom_playlist_name_is_used_and_old_playlist_is_replaced(env):
+    """设置里改了歌单名：新名字生效；重发时我们自己建的旧名歌单被删除重建（用户 2026-11-21）。"""
+    env.nd.main = [ndsong("m1", "A", "Song 1")]
+    env.lb.add("weekly_jams", "pl-1", [lbtrack(1)])
+    env.sync()
+    (old_id, (old_name, _)), = env.nd.playlists.items()
+    assert old_name == "LB Weekly Jams 2026-11-20"
+    env.settings["playlist_names"]["weekly_jams"] = "每周熟悉 {date}"
+    lb_playlist.publish_batch(env.db, env.nd, 1, lambda *a, **k: None, env.now, env.settings["playlist_names"])
+    names = [n for n, _ in env.nd.playlists.values()]
+    assert names == ["每周熟悉 2026-11-20"] and old_id not in env.nd.playlists

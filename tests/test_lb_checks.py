@@ -56,7 +56,7 @@ def test_lb_success_reports_latest_per_type_and_missing_daily():
              {"type": "other", "title": "x", "date": "2026-01-01T00:00:00"}]
     r = lb_checks.test_listenbrainz(settings(), FakeLB(lists=lists))
     assert r["latest"]["weekly_jams"]["title"] == "WJ new"
-    assert "Weekly Jams 2026-09-14" in r["message"] and "Daily Jams 暂无" in r["message"]
+    assert "每周熟悉 2026-09-14" in r["message"] and "每日熟悉 暂无" in r["message"]
 
 
 def test_navidrome_warns_about_missing_second_library_and_bad_ids():

@@ -107,3 +107,23 @@ def test_naming_default_and_update():
 def test_naming_rejects_bad_separators(bad):
     with pytest.raises(ValueError, match="连接符"):
         S.apply(S.defaults(), {"naming": {"artist_separator": bad}})
+
+
+# ---- 歌单名模板（用户 2026-11-21 要求：在设置里可改）
+def test_playlist_name_defaults_keep_old_names():
+    s = S.defaults()
+    assert s["playlist_names"]["daily"] == "LB Daily Jams {date}"
+
+
+def test_playlist_name_can_be_customised_and_validated():
+    s = S.apply(S.defaults(), {"playlist_names": {"daily": "  每日熟悉 {date} "}})
+    assert s["playlist_names"]["daily"] == "每日熟悉 {date}" and s["playlist_names"]["weekly_jams"].startswith("LB Weekly Jams")
+    for bad in ("", "   ", "x{name}", "a}b", "x" * 61, "a\nb"):
+        with pytest.raises(ValueError):
+            S.apply(S.defaults(), {"playlist_names": {"daily": bad}})
+
+
+def test_view_exposes_chinese_label_english_name_and_description():
+    t = {x["key"]: x for x in S.view(S.defaults(), "UTC")["rec_types"]}
+    assert t["weekly_exploration"]["label"] == "每周探新" and t["weekly_exploration"]["en"] == "Weekly Exploration"
+    assert all(len(x["label"]) <= 6 and x["desc"] for x in t.values())

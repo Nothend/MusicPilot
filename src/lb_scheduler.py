@@ -1,7 +1,7 @@
 """推荐联动的定时器：每 20 秒检查一次，到点就通过 LbService 启动对应任务。
 
 与现有「自动下载」定时器同一风格（容器 TZ 本地时间、错过的时间点不补跑），区别只在触发规则：
-- 每日同步  daily_time（每天）       → 只处理 Daily Jams
+- 每日同步  daily_time（每天）       → 只处理每日熟悉（Daily Jams）
 - 每周同步  weekly_weekday + weekly_time → 处理 Weekly Exploration / Weekly Jams
 - 转正检查  每 promote_interval_min 分钟（需开启「自动转正」）
 - 红心同步  每 love_interval_min 分钟（需开启红心同步）
@@ -99,7 +99,7 @@ class LbScheduler:
             return t if t > now else t + timedelta(days=1)
 
         if s["strategy"]["daily"]["enabled"]:
-            out.append({"task": "每日同步（Daily Jams）", "next": next_daily(sc["daily_time"])})
+            out.append({"task": "每日同步（每日熟悉）", "next": next_daily(sc["daily_time"])})
         if any(s["strategy"][t]["enabled"] for t in ("weekly_exploration", "weekly_jams")):
             t = next_daily(sc["weekly_time"])
             while t.weekday() != sc["weekly_weekday"]:

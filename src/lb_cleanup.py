@@ -139,7 +139,7 @@ def run_cleanup(d: CleanupDeps) -> Dict[str, Any]:
         d.nd.scan_and_wait(timeout=SCAN_TIMEOUT_S)
         sync_index(db, d.nd, nd_cfg["main_folder_id"], nd_cfg["discovery_folder_id"])
         for bid in affected:
-            lb_playlist.publish_batch(db, d.nd, bid, h.log, d.now())
+            lb_playlist.publish_batch(db, d.nd, bid, h.log, d.now(), d.settings.get("playlist_names"))
 
     purge_trash(d, disc_dir)
     purge_old_playlists(d)

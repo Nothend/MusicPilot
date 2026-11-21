@@ -52,6 +52,20 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   w.setLstState('NOT_FOUND'); await sleep(700);
   check('按状态筛选后只剩 2 首（未找到+只有MP3）', d.querySelectorAll('#lstItems .rit').length === 2);
   w.setLstState(''); await sleep(500);
+  check('列表页说明了该类推荐的含义', txt('lstDesc').includes('每周更新') && txt('lstDesc').includes('Weekly Jams'), txt('lstDesc'));
+  check('类型按钮是 6 字以内的中文名', [...d.querySelectorAll('#lstType button')].every(b => /^[\u4e00-\u9fa5]{2,6}$/.test(b.textContent)), txt('lstType'));
+  // ---- 疑似与主库重复（§17.16）
+  const dupBtn = n => [...d.querySelectorAll('#lstItems button')].find(b => b.textContent === n);
+  check('疑似重复提示显示两份文件信息', txt('lstItems').includes('疑似与主库重复') && txt('lstItems').includes('WAV · 3:51 · 30.0 MB') && txt('lstItems').includes('主库同名歌'), txt('lstItems').slice(0, 20));
+  check('疑似重复有三个按钮', ['保留试听库这份', '保留主库这份', '两份都留'].every(n => !!dupBtn(n)));
+  const nRuns = async () => (await (await fetch(BASE + '/api/lb/runs')).json()).runs.length;
+  const r0 = await nRuns();
+  dupBtn('保留试听库这份').click(); await sleep(300);
+  check('保留试听库这份：先弹确认框并说明主库那份进回收站', $('recConfirm').hasAttribute('open') && txt('rcBody').includes('回收站') && txt('rcBody').includes('WAV'), txt('rcBody').slice(0, 80));
+  $('recConfirm').close('no'); await sleep(500);
+  check('取消确认后没有产生新任务', (await nRuns()) === r0, `${r0}→${await nRuns()}`);
+  dupBtn('两份都留').click(); await sleep(900);
+  check('点「两份都留」后提示消失', !txt('lstItems').includes('疑似与主库重复') && !dupBtn('两份都留'), txt('toast'));
   // 点「保留」
   const keepBtn = [...d.querySelectorAll('#lstItems button')].find(b => b.textContent === '保留');
   keepBtn.click(); await sleep(900);
@@ -118,6 +132,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('推荐设置已移入「设置」页（可折叠，默认折叠）', !!$('cLbLb') && $('lbSetBox').tagName === 'DETAILS' && !$('lbSetBox').open && $('lbUser').value === 'me', `lbUser=${$('lbUser').value}`);
   check('推荐联动设置只在「设置」页内，其它标签页没有', !!$('p-set').querySelector('#lbSetBox') && d.querySelectorAll('#lbSetBox').length === 1 && !$('p-rec').querySelector('#lbSetBox') && !!d.querySelector('link[rel=icon]'));
   check('推荐页不再有「任务」「设置」子页', ![...d.querySelectorAll('#recNav button')].some(b => ['runs', 'set'].includes(b.dataset.v)));
+  check('推荐策略里可改 Navidrome 歌单名并带含义说明', $('pn-daily').value === 'LB Daily Jams {date}' && txt('stratRows').includes('探索新口味'), $('pn-daily').value);
   check('红心同步卡片存在', !!$('cLbLove'));
 
   console.log(logs.join('\n'));

@@ -67,7 +67,7 @@ def test_batches_order_and_filter(db):
     mk(db, "p1", "weekly_jams"); mk(db, "p2", "daily"); mk(db, "p3", "weekly_jams")
     assert [b["id"] for b in Q.batches(db)] == [3, 2, 1]
     assert [b["id"] for b in Q.batches(db, "weekly_jams")] == [3, 1]
-    assert Q.batches(db, limit=1)[0]["label"] == "Weekly Jams" and Q.batches(db)[1]["label"] == "Daily Jams"
+    assert Q.batches(db, limit=1)[0]["label"] == "每周熟悉" and Q.batches(db)[1]["label"] == "每日熟悉"
 
 
 def test_items_listing_fields_filter_and_counts(db):
@@ -83,7 +83,7 @@ def test_items_listing_fields_filter_and_counts(db):
     assert first["starred"] is True and first["keep"] is True and first["promoted"] is False
     assert [i["title"] for i in Q.items(db, b, ST.NOT_FOUND)["items"]] == ["歌2"]
     assert Q.items(db, b, ST.NOT_FOUND)["counts"] == res["counts"]                     # 计数不随筛选变化
-    assert Q.items(db, b)["batch"]["label"] == "Weekly Jams"
+    assert Q.items(db, b)["batch"]["label"] == "每周熟悉"
     with pytest.raises(ValueError):
         Q.items(db, 999)
 

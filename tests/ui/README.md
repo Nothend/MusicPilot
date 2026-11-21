@@ -5,8 +5,8 @@
 
 ```bash
 mkdir -p /tmp/jsd && cd /tmp/jsd && npm init -y && npm install jsdom@24        # 一次性；装在仓库之外
-cd /home/autoMusicDown && python tests/ui/ui_server.py > /tmp/ui_server.out &   # 输出的最后一行数字是端口
-cd /tmp/jsd && cp /home/autoMusicDown/tests/ui/ui_test.js . && node ui_test.js <端口>
+cd <仓库目录> && python tests/ui/ui_server.py > /tmp/ui_server.out &   # 输出的最后一行数字是端口
+cd /tmp/jsd && cp <仓库目录>/tests/ui/ui_test.js . && node ui_test.js <端口>
 ```
 
 期望输出全部 `✔` 且「脚本错误数: 0」。每次跑会改动造出来的数据（保留/重试/选择候选），重跑前请重启 `ui_server.py` 取干净状态。

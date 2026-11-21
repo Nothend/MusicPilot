@@ -66,6 +66,13 @@ db = app.store.db
 with app.tm.run('sync', 'manual') as h:
     from lb_pipeline import SyncDeps, run_sync
     run_sync(SyncDeps(db, s, lb, nd, adapter, h, request_delay=0, sleep=lambda x: None))
+# 一首「试听库」歌与主库疑似重复（§17.16）：给第一个有本地文件的试听库条目造一个主库同曲，一个 exact 级
+with db.transaction() as c:
+    dup_item = c.execute("SELECT i.id FROM recommendation_items i JOIN tracks t ON t.id=i.track_id JOIN recommendation_batches b ON b.id=i.batch_id "
+                        "WHERE b.type='weekly_jams' AND i.state='LOCAL_DISCOVERY' AND i.local_file_id IS NOT NULL ORDER BY i.id LIMIT 1").fetchone()['id']
+    c.execute("INSERT INTO local_files(nd_song_id, library, artist, title, album, duration, size, suffix, indexed_at) "
+              "VALUES('dupm','main','主库歌手','主库同名歌','主库专辑',231,31457280,'wav','t')")
+lb_repo.add_dup_suspects(db, dup_item, [('dupm', 'exact', 25)])
 # 一个 MULTIPLE_MATCH 条目 + 候选
 bid = lb_repo.create_batch(db, 'weekly_exploration', {'mbid': 'plE', 'title': 't', 'date': '2026-11-16T00:00:00+00:00'},
     {'tracks': [{'recording_mbid': 'mbE1', 'artist': '多歌手', 'title': '难选的歌', 'album': '专辑', 'duration_ms': 200000, 'artists': []}]})

@@ -117,7 +117,7 @@ def run_sync(d: SyncDeps) -> Dict[str, Any]:
 
     # 5) 建/更新 Navidrome 歌单；收尾已处理完的批次
     for bid in touched:
-        lb_playlist.publish_batch(d.db, d.nd, bid, h.log, d.now())
+        lb_playlist.publish_batch(d.db, d.nd, bid, h.log, d.now(), d.settings.get("playlist_names"))
         _maybe_finish_batch(d, bid)
 
     # 6) 试听库里有哪些歌疑似和主库重复（只检测提示，不动文件）

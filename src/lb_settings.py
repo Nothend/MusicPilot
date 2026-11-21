@@ -11,7 +11,17 @@ from typing import Any, Dict, Optional
 
 SETTINGS_KEY = "lb.settings"
 REC_TYPES = ("daily", "weekly_exploration", "weekly_jams")
-REC_LABELS = {"daily": "Daily Jams", "weekly_exploration": "Weekly Exploration", "weekly_jams": "Weekly Jams"}
+# 页面/日志/通知里显示的中文名（≤6 字）、ListenBrainz 原名与含义说明
+REC_LABELS = {"daily": "每日熟悉", "weekly_exploration": "每周探新", "weekly_jams": "每周熟悉"}
+REC_EN = {"daily": "Daily Jams", "weekly_exploration": "Weekly Exploration", "weekly_jams": "Weekly Jams"}
+REC_DESCS = {
+    "daily": "每日更新，顺着你熟悉的口味延续：同风格、听着舒服的歌",
+    "weekly_exploration": "每周一刷新，主打完全陌生的新艺人：探索新口味",
+    "weekly_jams": "每周更新，顺着你熟悉的口味延续",
+}
+# Navidrome 歌单名模板：{date} 会替换为 ListenBrainz 歌单日期（如 2026-11-20）
+DEFAULT_PLAYLIST_NAMES = {"daily": "LB Daily Jams {date}", "weekly_exploration": "LB Weekly Exploration {date}",
+                          "weekly_jams": "LB Weekly Jams {date}"}
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 STAGING_DIRNAME = ".staging"   # discovery 内的下载暂存目录（Navidrome 忽略以 . 开头的目录）
 TRASH_DIRNAME = ".trash"       # discovery 内的软删除目录
@@ -33,6 +43,8 @@ def defaults() -> Dict[str, Any]:
         # 转正进主库时的命名：多歌手连接符。默认「, 」（社区通行，且与用户库中较早期目录一致）；
         # 填「 / 」会精确复现 MoviePilot 现在的写法（再换成全角：`A ／ B`）
         "naming": {"artist_separator": ", "},
+        # 在 Navidrome 里生成的歌单名（每类一个模板，{date} = 歌单日期）；只有我们自己建的歌单会被改名/重建
+        "playlist_names": dict(DEFAULT_PLAYLIST_NAMES),
         "discovery": {"retention_days": 7, "auto_promote": True, "auto_cleanup": True,
                       "trash_days": 7, "playlist_keep_days": 30},
         "retry": {"not_found_cooldown_days": 7, "download_max_retries": 3},
@@ -104,6 +116,18 @@ def _abs_dir(v: Any, name: str) -> str:
     return p
 
 
+def _playlist_name(v: Any, name: str) -> str:
+    """歌单名模板：非空、≤60 字符、无控制字符；花括号只允许 {date}。"""
+    v = _str(v, name, 60)
+    if not v:
+        raise ValueError(f"{name}不能为空")
+    if any(ord(c) < 32 or ord(c) == 127 for c in v):
+        raise ValueError(f"{name}不能包含控制字符")
+    if re.sub(r"\{date\}", "", v).count("{") or re.sub(r"\{date\}", "", v).count("}"):
+        raise ValueError(f"{name}里只能使用 {{date}} 这一个占位符")
+    return v
+
+
 def _nested(a: str, b: str) -> bool:
     return a == b or a.startswith(b + "/") or b.startswith(a + "/")
 
@@ -171,6 +195,12 @@ def apply(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(p, dict) and "artist_separator" in p:
         s["naming"]["artist_separator"] = _artist_sep(p["artist_separator"])
 
+    p = payload.get("playlist_names")
+    if isinstance(p, dict):
+        for t in REC_TYPES:
+            if t in p:
+                s["playlist_names"][t] = _playlist_name(p[t], f"{REC_LABELS[t]}歌单名")
+
     p = payload.get("strategy")
     if isinstance(p, dict):
         for t in REC_TYPES:
@@ -230,5 +260,5 @@ def view(s: Dict[str, Any], tz: str) -> Dict[str, Any]:
     v["navidrome"] = {"url": n["url"], "user": n["user"], "has_password": bool(n["password"]),
                       "main_folder_id": n["main_folder_id"], "discovery_folder_id": n["discovery_folder_id"]}
     v["timezone"] = tz
-    v["rec_types"] = [{"key": t, "label": REC_LABELS[t]} for t in REC_TYPES]
+    v["rec_types"] = [{"key": t, "label": REC_LABELS[t], "en": REC_EN[t], "desc": REC_DESCS[t]} for t in REC_TYPES]
     return v

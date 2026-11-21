@@ -194,7 +194,7 @@ def finalize_promoting(d: PromoteDeps, main_dir: Path, force_scan: bool = False)
         _release_siblings(d, fid, song.nd_song_id, dst)
         h.add("promoted"); h.log(f"转正完成：{who}")
     for bid in affected_batches:                            # id 若变化，歌单要重发
-        lb_playlist.publish_batch(db, d.nd, bid, h.log, d.now())
+        lb_playlist.publish_batch(db, d.nd, bid, h.log, d.now(), d.settings.get("playlist_names"))
 
 
 def _release_siblings(d: PromoteDeps, old_fid: str, new_fid: str, dst: Path) -> None:

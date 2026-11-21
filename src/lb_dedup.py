@@ -169,7 +169,7 @@ def run_dedup(d: DedupDeps) -> Dict[str, Any]:
         lb_repo.delete_dup_suspects(db, [g["id"] for g in group])
         h.add("dedup_kept_main")
         for bid in sorted({g["batch_id"] for g in group}):
-            lb_playlist.publish_batch(db, d.nd, bid, h.log, d.now())
+            lb_playlist.publish_batch(db, d.nd, bid, h.log, d.now(), d.settings.get("playlist_names"))
         _rescan(d, nd_cfg)
         return h.stats
 

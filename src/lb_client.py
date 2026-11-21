@@ -14,7 +14,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.listenbrainz.org"
-USER_AGENT = "autoMusicDown/1.0 (+https://github.com/Nothend/autoMusicDown)"
+USER_AGENT = "musicpilot/1.0 (+https://github.com/Nothend/musicpilot)"
 
 # createdfor 歌单的 source_patch -> 推荐类型。daily 的取值在账号出现 Daily Jams 前未实测，
 # 因此另按标题兜底（见 classify）

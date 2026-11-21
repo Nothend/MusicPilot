@@ -106,7 +106,7 @@ def test_items_endpoint_lists_the_recommendations(api):
     bid = api.get("/api/lb/batches?type=weekly_jams").json()["batches"][0]["id"]
     res = api.get(f"/api/lb/items?batch={bid}").json()
     assert [i["title"] for i in res["items"]] == ["Song 1", "Song 2"] and res["counts"] == {ST.LOCAL_DISCOVERY: 2}
-    assert res["items"][0]["path"].endswith("A - Song 1.flac") and res["batch"]["label"] == "Weekly Jams"
+    assert res["items"][0]["path"].endswith("A - Song 1.flac") and res["batch"]["label"] == "每周熟悉"
     assert len(api.get(f"/api/lb/items?batch={bid}&state={ST.NOT_FOUND}").json()["items"]) == 0
 
 
@@ -203,7 +203,7 @@ def test_startup_recovers_leftovers_from_a_killed_process(api):
 
 def test_schedule_endpoint_lists_upcoming_runs_only_when_enabled(api):
     up = api.get("/api/lb/schedule").json()
-    assert {u["task"] for u in up["upcoming"]} >= {"每日同步（Daily Jams）", "每周同步（Weekly）", "过期清理", "转正检查"} and up["timezone"]
+    assert {u["task"] for u in up["upcoming"]} >= {"每日同步（每日熟悉）", "每周同步（Weekly）", "过期清理", "转正检查"} and up["timezone"]
     api.configure(enabled=False)
     assert api.get("/api/lb/schedule").json()["upcoming"] == []
 

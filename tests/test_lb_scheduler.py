@@ -202,7 +202,7 @@ def test_upcoming_lists_next_runs_in_order(env):
     sched, svc, clock, _ = env
     clock.t = MON.replace(hour=9, minute=0)
     up = {u["task"]: u["next"] for u in sched.upcoming()}
-    assert up["每日同步（Daily Jams）"] == "2026-11-24 08:30"
+    assert up["每日同步（每日熟悉）"] == "2026-11-24 08:30"
     assert up["每周同步（Weekly）"] == "2026-11-23 10:00"                   # 现在是周一 09:00，今天 10:00 还没到
     assert up["过期清理"] == "2026-11-24 04:00"                              # 今天 04:00 已过 → 明天
     assert "转正检查" not in up and "红心同步" not in up                      # 对应开关没开就不显示
