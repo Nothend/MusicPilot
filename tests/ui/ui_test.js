@@ -1,0 +1,126 @@
+// 页面冒烟测试：用 jsdom 加载真实页面，逐个点开「推荐」的子页面并点按钮，捕获所有脚本错误。
+// 用法见同目录 README.md：node ui_test.js <端口>
+const { JSDOM, VirtualConsole } = require('jsdom');
+const PORT = process.argv[2], BASE = `http://127.0.0.1:${PORT}`;
+const errors = [], logs = [];
+const vc = new VirtualConsole();
+vc.on('jsdomError', e => errors.push('jsdomError: ' + (e.detail || e.message)));
+vc.on('error', e => errors.push('console.error: ' + e));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name}${extra ? ' — ' + extra : ''}`); if (!cond) errors.push('断言失败: ' + name); };
+
+(async () => {
+  const dom = await JSDOM.fromURL(BASE + '/', {
+    runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, virtualConsole: vc,
+    beforeParse(w) {
+      w.fetch = (u, o) => fetch(new URL(u, BASE), o);
+      w.addEventListener('error', e => errors.push('window.onerror: ' + e.message));
+      w.addEventListener('unhandledrejection', e => errors.push('unhandledrejection: ' + e.reason));
+      w.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
+      w.HTMLDialogElement.prototype.close = function (v) { this.removeAttribute('open'); if (v !== undefined) this.returnValue = v; this.dispatchEvent(new w.Event('close')); };
+    },
+  });
+  const w = dom.window, d = w.document, $ = id => d.getElementById(id), txt = id => ($(id).textContent || '').replace(/\s+/g, ' ');
+  await sleep(1500);                                                   // 页面加载 + loadState/initData
+  check('登录态下主界面可见', !$('main').classList.contains('hide'));
+  check('导航里有「推荐」标签', !!d.querySelector('#nav button[data-tab="rec"]'));
+
+  // ---- 概览
+  w.showTab('rec'); await sleep(900);
+  check('概览子页可见', !$('rv-dash').classList.contains('hide') && $('rv-list').classList.contains('hide'));
+  check('显示「已启用」', txt('dbEnabled').includes('已启用'), txt('dbEnabled'));
+  check('统计卡片已渲染', $('dbTiles').children.length >= 10, `${$('dbTiles').children.length} 个`);
+  const tiles = txt('dbTiles'); logs.push('   统计: ' + tiles.slice(0, 160));
+  check('今日推荐=10（7+2+1）', /10今日推荐/.test(tiles));
+  check('最新一份推荐含两类', txt('dbBatches').includes('Weekly Jams') && txt('dbBatches').includes('Daily Jams'), txt('dbBatches').slice(0, 120));
+  check('状态徽标有「未找到」', txt('dbBatches').includes('未找到') && txt('dbBatches').includes('下载失败'));
+  check('空闲状态 + 上次任务', txt('dbCurrent').includes('空闲') && txt('dbCurrent').includes('推荐同步'), txt('dbCurrent').slice(0, 80));
+  check('显示计划', txt('dbNext').includes('每日同步'), txt('dbNext').slice(0, 80));
+
+  // ---- 推荐歌单
+  d.querySelector('#recNav button[data-v="list"]').click(); await sleep(900);
+  check('列表子页可见', !$('rv-list').classList.contains('hide'));
+  d.querySelector('#lstType button[data-v="weekly_jams"]').click(); await sleep(900);
+  const rows = d.querySelectorAll('#lstItems .rit');
+  check('Weekly Jams 列出 7 首', rows.length === 7, `${rows.length}`);
+  const t = txt('lstItems');
+  check('含各种状态', ['主库已有', '试听库', '未找到', '下载失败'].every(x => t.includes(x)), '');
+  check('原因中文化', t.includes('网易云没有这首') && t.includes('只有 MP3'), '');
+  check('有「重试」按钮', [...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '重试'));
+  check('试听库歌曲有「保留」按钮', [...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '保留'));
+  check('状态筛选条', txt('lstStates').includes('全部 7'), txt('lstStates'));
+  w.setLstState('NOT_FOUND'); await sleep(700);
+  check('按状态筛选后只剩 2 首（未找到+只有MP3）', d.querySelectorAll('#lstItems .rit').length === 2);
+  w.setLstState(''); await sleep(500);
+  // 点「保留」
+  const keepBtn = [...d.querySelectorAll('#lstItems button')].find(b => b.textContent === '保留');
+  keepBtn.click(); await sleep(900);
+  check('点「保留」后变成「取消保留」+ 保留标记', [...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '取消保留') && txt('lstItems').includes('保留'));
+  // 点「重试」
+  const retryBtn = [...d.querySelectorAll('#lstItems button')].find(b => b.textContent === '重试');
+  retryBtn.click(); await sleep(900);
+  check('点「重试」后该条回到待处理', txt('lstItems').includes('待处理'));
+  // 候选选择
+  d.querySelector('#lstType button[data-v="weekly_exploration"]').click(); await sleep(900);
+  check('待选择条目有「选择」按钮', [...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '选择'));
+  [...d.querySelectorAll('#lstItems button')].find(b => b.textContent === '选择').click(); await sleep(300);
+  check('候选对话框列出 2 个候选', d.querySelectorAll('#candList .sched').length === 2 && $('candDlg').hasAttribute('open'), txt('candList').slice(0, 120));
+  d.querySelector('#candList button').click(); await sleep(1000);
+  check('选择试听库候选后该条变为「试听库」且不再有选择按钮', txt('lstItems').includes('试听库') && ![...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '选择'), txt('lstItems').slice(0, 80));
+
+  // ---- 任务
+  d.querySelector('#nav button[data-tab="jobs"]').click(); await sleep(300);
+  d.querySelector('#jKind button[data-v="lb"]').click(); await sleep(900);
+  check('合并后：任务记录页里选「推荐联动」只显示推荐任务', d.getElementById('jobsSec').classList.contains('hide') && !d.getElementById('runsSec').classList.contains('hide'));
+  check('任务列表有记录', d.querySelectorAll('#runsBox .run').length >= 1, `${d.querySelectorAll('#runsBox .run').length}`);
+  d.querySelector('#runsBox .rh').click(); await sleep(900);
+  const log = txt('rlog-' + d.querySelector('#runsBox .run').id.replace('run-', ''));
+  check('展开后显示日志', log.includes('任务开始') && log.includes('任务结束'), log.slice(0, 100));
+
+  // ---- 快捷操作
+  d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(300);
+  d.querySelector('#recNav button[data-v="dash"]').click(); await sleep(700);
+  check('概览运行状态使用键值排版', d.querySelectorAll('#dbCurrent .k').length >= 2, `${d.querySelectorAll('#dbCurrent .k').length}`);
+  await w.eval('actLovePreview()'); await sleep(1500);                    // 预览任务真的在后台跑完
+  const lp = await (await fetch(BASE + '/api/lb/runs')).json();
+  const lrun = lp.runs.find(r => r.type === 'love_preview');
+  check('红心预览任务成功完成（不再因假对象缺方法而失败）', lrun && lrun.status === 'done' && !lrun.summary, lrun ? `${lrun.status} ${lrun.summary}` : '没有该任务');
+  w.eval('showLovePreview()'); await sleep(700);
+  check('红心预览对话框显示真实跑出的结果', $('loveDlg').hasAttribute('open') && txt('loveMeta').includes('将提交 1 首') && txt('loveList').includes('红心歌'), txt('loveMeta'));
+  check('预览里标明 MBID 来源', txt('loveList').includes('Navidrome 标签'), txt('loveList'));
+  $('loveDlg').close();
+  // 清理：没有过期的 → toast
+  await w.eval('actCleanup()'); await sleep(500);
+  check('没有可清理时给出提示', txt('toast').includes('没有需要清理'), txt('toast'));
+  // 转正：弹确认框，取消
+  const countRuns = async () => (await (await fetch(BASE + '/api/lb/runs')).json()).runs.length;
+  const before = await countRuns();
+  const p = w.eval('actPromote()'); await sleep(200);
+  check('转正先弹确认框', $('recConfirm').hasAttribute('open') && txt('rcBody').includes('不会覆盖'), txt('rcBody').slice(0, 60));
+  $('recConfirm').close('no'); await p; await sleep(400);
+  check('取消确认后没有产生新任务', (await countRuns()) === before, `${before}→${await countRuns()}`);
+  // 409：任务正在运行 → 页面给出明确提示，不报脚本错误
+  const realFetch = w.fetch;
+  w.fetch = (u, o) => String(u).includes('/api/lb/action') ? Promise.resolve({ ok: false, status: 409, json: async () => ({ error: '任务正在运行：sync', busy: true, running: { type: 'sync' } }) }) : realFetch(u, o);
+  await w.eval('actSync()'); await sleep(400);
+  check('409 时提示「已有任务在运行」', txt('toast').includes('已有任务在运行'), txt('toast'));
+  w.fetch = realFetch;
+  // 400：门禁等错误原样显示
+  w.fetch = (u, o) => String(u).includes('/api/lb/action') ? Promise.resolve({ ok: false, status: 400, json: async () => ({ error: '推荐联动还没有启用：请先在「设置」页的「推荐联动设置」里配置并打开总开关' }) }) : realFetch(u, o);
+  await w.eval('actSync()'); await sleep(400);
+  check('400 时显示后端给出的原因', txt('toast').includes('还没有启用'), txt('toast'));
+  w.fetch = realFetch;
+  const b2 = await countRuns();
+  await w.eval('actSync()'); await sleep(1500);
+  check('点「立即同步推荐」恰好产生 1 个任务', (await countRuns()) === b2 + 1, `${b2}→${await countRuns()}`);
+  // 设置子页仍在
+  d.querySelector('#nav button[data-tab="set"]').click(); await sleep(900);
+  check('推荐设置已移入「设置」页（可折叠，默认折叠）', !!$('cLbLb') && $('lbSetBox').tagName === 'DETAILS' && !$('lbSetBox').open && $('lbUser').value === 'me', `lbUser=${$('lbUser').value}`);
+  check('推荐联动设置只在「设置」页内，其它标签页没有', !!$('p-set').querySelector('#lbSetBox') && d.querySelectorAll('#lbSetBox').length === 1 && !$('p-rec').querySelector('#lbSetBox') && !!d.querySelector('link[rel=icon]'));
+  check('推荐页不再有「任务」「设置」子页', ![...d.querySelectorAll('#recNav button')].some(b => ['runs', 'set'].includes(b.dataset.v)));
+  check('红心同步卡片存在', !!$('cLbLove'));
+
+  console.log(logs.join('\n'));
+  console.log('\n脚本错误数:', errors.length); errors.forEach(e => console.log('  ' + e));
+  w.close(); process.exit(errors.length ? 1 : 0);
+})().catch(e => { console.log(logs.join('\n')); console.log('测试脚本异常:', e); process.exit(2); });

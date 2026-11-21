@@ -30,7 +30,8 @@ class BarkNotifier:
             self.logger.info("Bark通知发送成功")
             return True
         except Exception as e:
-            self.logger.error(f"Bark通知发送失败: {str(e)}")
+            # 不要把异常原文写进日志：requests 的异常信息里带完整请求地址，而地址里就是 Bark 密钥
+            self.logger.error(f"Bark通知发送失败: {type(e).__name__}")
             return False
 
     def send_download_report(

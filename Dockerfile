@@ -24,12 +24,15 @@ ENV TZ=Asia/Shanghai \
 # ca-certificates：HTTPS 请求；tzdata：让 TZ=Asia/Shanghai 真正生效
 #（以日期命名的歌单匹配依赖容器本地时区，缺 tzdata 会退回 UTC 造成跨零点错配）
 RUN apk add --no-cache ca-certificates tzdata \
-    && mkdir -p /app/logs /app/downloads
+    && mkdir -p /app/logs /app/downloads /app/data
 
 # 依赖 + 应用代码 + 入口脚本
 COPY --from=builder /app/deps /usr/local/lib/python3.12/site-packages/
 COPY src/ /app/src/
 COPY entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh
+
+# Web 控制台端口（WEB_ENABLE=true 时监听 WEB_PORT，默认 8080；compose 示例用 5119）
+EXPOSE 5119
 
 ENTRYPOINT ["/app/entrypoint.sh"]

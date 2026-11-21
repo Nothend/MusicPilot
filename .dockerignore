@@ -18,3 +18,16 @@ __pycache__/
 .DS_Store
 # 排除根目录的config.yaml
 config.yaml
+# Web 控制台数据
+data/
+
+# 打包产物
+dist/
+
+# 测试、设计文档、本地实测用的凭据文件（含密钥，绝不能进入构建上下文）
+tests/
+DESIGN-LB.md
+PRD.md
+.spike.env
+.spike-lb.env
+requirements-dev.txt

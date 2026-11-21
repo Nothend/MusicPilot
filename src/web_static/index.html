@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>云音乐自动下载</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23c20c0c'/%3E%3Cpath d='M42 14v26.5a8.5 8.5 0 1 1-4-7.2V22l-14 3v21.5a8.5 8.5 0 1 1-4-7.2V20z' fill='white'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--fg:#1f2430;--sub:#7b8494;--line:#e6e9ef;--pri:#d33a31;--pri2:#b92f27;--ok:#1f9d55;--warn:#d98a00;--err:#d33a31;--h:34px}
+@media(prefers-color-scheme:dark){:root{--bg:#14161a;--card:#1d2026;--fg:#e6e8ec;--sub:#8b93a1;--line:#2b2f37}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+.top{display:flex;align-items:center;gap:12px;margin:4px 0 12px;flex-wrap:wrap}
+.top h1{font-size:18px;margin:0;flex:1;white-space:nowrap}
+.chip{display:flex;align-items:center;gap:8px;font-size:13px}
+.chip img{width:28px;height:28px;border-radius:50%;background:var(--line)}
+.sub{color:var(--sub);font-size:12px}
+.hide{display:none!important}
+
+/* 顶部 Tab */
+.nav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+.nav button{background:transparent;color:var(--sub);border:0;border-bottom:2px solid transparent;border-radius:0;height:auto;padding:8px 16px;font-size:14px;white-space:nowrap}
+.nav button:hover{background:transparent;color:var(--fg)}
+.nav button.on{color:var(--pri);border-bottom-color:var(--pri);font-weight:600}
+.nav .n{display:inline-block;padding:0 6px;margin-left:4px;border-radius:9px;background:var(--pri);color:#fff;font-size:11px;line-height:18px;font-weight:400}
+.nav .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--err);margin-left:4px;vertical-align:middle}
+.panel{display:none}
+.panel.on{display:block}
+
+/* 卡片与统一栅格表单：标签列固定 96px，控件列撑满 */
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+.card h2 .sub{font-weight:400}
+.f{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:center;margin:10px 0}
+.f>.lb{color:var(--sub);font-size:13px}
+.c{display:flex;gap:8px;align-items:center;min-width:0;flex-wrap:wrap}
+.c>input,.c>select{flex:1 1 0;min-width:0}
+.c>button,.c>.fix{flex:none}
+.c .w90{flex:none;width:90px}
+.hint{color:var(--sub);font-size:12px;margin:-4px 0 8px 108px}
+.hint:empty{display:none}
+.acts{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+input[type=text],input[type=password],input[type=time],select{height:var(--h);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:0 10px;font:inherit}
+input[type=text]:focus,input[type=password]:focus,input[type=time]:focus,select:focus{outline:2px solid var(--pri);outline-offset:-1px}
+button{height:var(--h);background:var(--pri);color:#fff;border:0;border-radius:6px;padding:0 16px;font:inherit;cursor:pointer;white-space:nowrap}
+button:hover{background:var(--pri2)}
+button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+button.ghost:hover{background:var(--bg)}
+button.sm{height:26px;padding:0 10px;font-size:12px}
+button:disabled{opacity:.5;cursor:not-allowed}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;height:30px;background:transparent;color:var(--fg);border:0;border-right:1px solid var(--line);border-radius:0;padding:0 10px}
+.seg button:last-child{border-right:0}
+.seg button:hover{background:var(--bg)}
+.seg button.on{background:var(--pri);color:#fff}
+.seg.auto{display:inline-flex}
+.seg.auto button{flex:none}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;color:#fff}
+.b-vip{background:var(--ok)}.b-mp3{background:var(--warn)}.b-bad{background:var(--err)}
+.tag{display:inline-block;white-space:nowrap;padding:0 7px;border-radius:9px;font-size:12px;line-height:18px;border:1px solid var(--line);color:var(--sub);margin:0 4px 2px 0}
+.tag.ok{color:var(--ok);border-color:var(--ok)}.tag.bad{color:var(--err);border-color:var(--err)}.tag.warn{color:var(--warn);border-color:var(--warn)}
+.sw{display:inline-flex;gap:4px;align-items:center;font-size:12px;cursor:pointer}
+
+/* 扫码、列表、进度 */
+#qr{width:232px;height:232px;background:#fff;border-radius:8px;line-height:0}
+#qr img{width:232px;height:232px;display:block;image-rendering:pixelated}
+.qrrow{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.list{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.list label{display:flex;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line);cursor:pointer}
+.list label:last-child{border-bottom:0}
+.list .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:6px 0}
+.bar i{display:block;height:100%;background:var(--pri);transition:width .3s}
+.st-done{color:var(--ok)}.st-failed{color:var(--err)}.st-running{color:var(--pri)}.st-queued,.st-cancelled{color:var(--sub)}
+pre.log{background:var(--bg);border-radius:6px;padding:6px 8px;font-size:12px;max-height:220px;overflow:auto;white-space:pre-wrap;margin:6px 0 0}
+.sched{border-top:1px solid var(--line);padding:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sched:first-child{border-top:0}
+.sched .grow{flex:1;min-width:220px}
+.chips span{display:inline-block;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:0 8px;margin:2px 4px 2px 0;font-size:12px}
+.chips span b{cursor:pointer;margin-left:4px;color:var(--sub)}
+dialog{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:16px;width:min(560px,94vw)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+
+/* 任务记录 */
+.tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.job{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;overflow:hidden;background:var(--card)}
+.jh{padding:10px 12px;cursor:pointer}
+.jh:hover{background:var(--bg)}
+.jl1{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.jl2{margin-top:4px}
+.jd{border-top:1px solid var(--line);padding:10px 12px}
+.tbl{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:8px}
+.it{display:grid;grid-template-columns:76px minmax(0,1fr) auto;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);align-items:start}
+.it:last-child{border-bottom:0}
+.it .nm{word-break:break-all}
+.why{color:var(--err);font-size:12px;word-break:break-all}
+a.lnk{color:var(--pri);text-decoration:none;white-space:nowrap;font-size:12px}
+a.lnk:hover{text-decoration:underline}
+.group{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.group.first{border-top:0;margin-top:0;padding-top:0}
+.group h3{font-size:14px;margin:0 0 4px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:8px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;z-index:9}
+#toast.on{opacity:.95}
+.lbset{padding:0}.lbset>summary{cursor:pointer;padding:12px 14px;list-style:none}.lbset>summary::-webkit-details-marker{display:none}
+.lbset>summary::before{content:"▸ ";color:var(--sub)}.lbset[open]>summary::before{content:"▾ "}
+.lbset>.card{margin:0 12px 12px;box-shadow:none}.lbset>.hint{margin:0 14px}
+.warnbox{margin:0 14px 12px;padding:8px 10px;border:1px solid var(--warn);border-radius:8px;color:var(--warn);font-size:12px;line-height:1.6}
+h3.sec{font-size:13px;margin:12px 0 6px;color:var(--sub)}.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;align-items:baseline}
+.kv>.k{color:var(--sub);font-size:12px;white-space:nowrap}
+.batch{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center}
+.batch:last-child{border-bottom:0}.batch .badges{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}
+.qa{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.qa button{width:100%;margin:0}
+.qa-t{font-size:12px;color:var(--sub);margin:12px 0 6px}.qa-t:first-of-type{margin-top:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.tile b{display:block;font-size:22px;line-height:1.2}
+.tile span{color:var(--sub);font-size:12px}
+.tile.warn b{color:var(--warn)}.tile.bad b{color:var(--err)}.tile.ok b{color:var(--ok)}
+.rit{display:grid;grid-template-columns:minmax(0,1fr) 168px 96px;gap:8px 12px;padding:8px 10px;border-bottom:1px solid var(--line);align-items:start}
+.rit .stc{display:flex;flex-wrap:wrap;gap:4px;align-items:flex-start}.rit .stc .sub{flex-basis:100%}
+.rit .acts{justify-content:flex-start}
+.rit:last-child{border-bottom:0}
+.rit .nm{min-width:0}.rit .nm div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rit .pth{color:var(--sub);font-size:11px;word-break:break-all;white-space:normal!important}
+.st{display:inline-block;white-space:nowrap;padding:0 8px;border-radius:9px;font-size:12px;line-height:18px;border:1px solid var(--line);color:var(--sub)}
+.st.ok{color:var(--ok);border-color:var(--ok)}.st.bad{color:var(--err);border-color:var(--err)}.st.warn{color:var(--warn);border-color:var(--warn)}.st.run{color:var(--pri);border-color:var(--pri)}
+.run{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:var(--card);overflow:hidden}
+.run .rh{padding:8px 12px;cursor:pointer;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.run .rh:hover{background:var(--bg)}
+.run .rb{border-top:1px solid var(--line);padding:8px 12px}
+pre.rlog{background:var(--bg);border-radius:6px;padding:6px 8px;font-size:12px;max-height:340px;overflow:auto;white-space:pre-wrap;margin:0}
+pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
+@media(max-width:600px){.rit{grid-template-columns:1fr}.qa{grid-template-columns:1fr 1fr}.batch{grid-template-columns:1fr}.f{grid-template-columns:1fr;gap:4px}.hint{margin-left:0}.it{grid-template-columns:76px minmax(0,1fr)}.it a.lnk{grid-column:2}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top">
+  <h1>🎵 云音乐自动下载</h1>
+  <div id="acctChip" class="chip"></div>
+</div>
+
+<!-- 未登录：整页只显示扫码 -->
+<div class="card hide" id="loginCard">
+  <h2>扫码登录</h2>
+  <div id="loginMsg" class="sub" style="margin-bottom:8px"></div>
+  <div class="qrrow"><div id="qr"></div>
+    <div><div id="qrMsg">请用网易云音乐 App 扫码</div>
+    <div class="sub">App → 我的 → 左上角扫一扫</div>
+    <button class="ghost sm" onclick="qrStart()" style="margin-top:8px">刷新二维码</button></div></div>
+</div>
+
+<div id="main" class="hide">
+<div class="nav" id="nav">
+  <button data-tab="dl">下载</button>
+  <button data-tab="auto">自动下载</button>
+  <button data-tab="jobs">任务记录<span id="navJobs"></span></button>
+  <button data-tab="rec">推荐</button>
+  <button data-tab="set">设置</button>
+</div>
+
+<!-- ============ 下载 ============ -->
+<div class="panel" id="p-dl">
+<div class="card">
+  <h2>下载</h2>
+  <div class="f"><span class="lb">来源</span>
+    <div class="c"><div class="seg" id="srcTabs" style="flex:1">
+      <button data-t="daily" class="on">每日推荐</button><button data-t="today">今日日期歌单</button>
+      <button data-t="playlist">我的歌单</button><button data-t="album">专辑</button></div></div></div>
+  <div class="f hide" id="plRow"><span class="lb">选择歌单</span><div class="c"><select id="plSel"></select></div></div>
+  <div class="f hide" id="idRow"><span class="lb" id="idLb">歌单/专辑</span>
+    <div class="c"><input type="text" id="idIn" placeholder="粘贴歌单/专辑 ID 或分享链接"></div></div>
+  <div class="f"><span class="lb">保存到</span>
+    <div class="c"><select id="dirSel"></select>
+      <input type="text" id="newDir" placeholder="或新建子目录名"></div></div>
+  <div class="hint" id="dirHint"></div>
+  <div class="acts">
+    <button class="ghost" onclick="preview()">预览歌曲</button>
+    <button onclick="download(false)" id="btnDl">下载全部</button></div>
+  <div id="pvBox" class="hide" style="margin-top:12px">
+    <div class="f" style="grid-template-columns:minmax(0,1fr) auto;margin:6px 0"><div><b id="pvName"></b> <span class="sub" id="pvCnt"></span></div>
+      <label class="sw"><input type="checkbox" id="pvAll" checked> 全选</label></div>
+    <div class="list" id="pvList"></div>
+    <div class="acts"><button onclick="download(true)">下载选中</button></div>
+  </div>
+</div>
+</div>
+
+<!-- ============ 自动下载 ============ -->
+<div class="panel" id="p-auto">
+<div class="card">
+  <h2>自动下载（定时）<span class="sub" style="flex:1">按容器时区（TZ）每天固定时间触发；停机期间错过的时间点不补跑</span>
+    <button class="sm" onclick="newSched()">＋ 新建</button></h2>
+  <div id="schedList" class="sub">暂无定时任务</div>
+</div>
+</div>
+
+<!-- ============ 任务记录 ============ -->
+<div class="panel" id="p-jobs">
+<div class="card">
+  <h2>任务记录 <span class="sub" id="jobsTotal"></span>
+    <button class="ghost sm" style="margin-left:auto" onclick="refreshJobsTab()">刷新</button></h2>
+  <div class="tools">
+    <div class="seg auto" id="jKind"><button data-v="all" class="on">全部</button><button data-v="dl">下载任务</button><button data-v="lb">推荐联动</button></div>
+    <div class="seg auto" id="jTrig"><button data-v="" class="on">全部</button><button data-v="manual">手动</button><button data-v="schedule">定时</button></div>
+    <label class="sw"><input type="checkbox" id="jFailed"> 仅看有失败的</label>
+  </div>
+  <div id="jobsSec">
+    <h3 class="sec" id="jobsHd">下载任务</h3>
+    <div id="jobs" class="sub">暂无任务</div>
+    <div class="acts" style="justify-content:center"><button class="ghost hide" id="jMore" onclick="loadJobs(false, true)">加载更多</button></div>
+  </div>
+  <div id="runsSec">
+    <h3 class="sec" id="runsHd">推荐联动任务</h3>
+    <div id="runsBox" class="sub">加载中…</div>
+  </div>
+</div>
+</div>
+<!-- ============ 设置 ============ -->
+<div class="panel" id="p-rec">
+<div class="seg" id="recNav" style="margin-bottom:12px">
+  <button data-v="dash" class="on">概览</button><button data-v="list">推荐歌单</button>
+</div>
+
+<div class="rv" id="rv-dash">
+  <div class="card">
+    <h2>运行状态 <span id="dbEnabled"></span></h2>
+    <div id="dbCurrent" class="kv"><span class="sub">加载中…</span></div>
+    <div class="hint" style="margin:6px 0 0 0" id="dbNext"></div>
+  </div>
+  <div class="tiles" id="dbTiles"></div>
+  <div class="card"><h2>最新一份推荐</h2><div id="dbBatches" class="sub">暂无</div></div>
+  <div class="card">
+    <h2>快捷操作</h2>
+    <div class="qa-t">推荐与文件</div>
+    <div class="qa">
+      <button onclick="actSync()">立即同步推荐</button>
+      <button class="ghost" onclick="actPromote()">一键转正红心曲目</button>
+      <button class="ghost" onclick="actCleanup()">立即清理过期文件</button>
+    </div>
+    <div class="qa-t">索引</div>
+    <div class="qa">
+      <button class="ghost" onclick="recRun({kind:'reindex'},'同步本地索引')">同步本地索引</button>
+      <button class="ghost" onclick="recRun({kind:'reindex',scan:true},'扫描并同步索引')">扫描并同步索引</button>
+    </div>
+    <div class="qa-t">红心同步（ListenBrainz）</div>
+    <div class="qa">
+      <button class="ghost" onclick="actLovePreview()">预览要提交的红心</button>
+      <button class="ghost" onclick="showLovePreview()">查看上次预览</button>
+      <button class="ghost" onclick="actLove()">提交到 ListenBrainz</button>
+    </div>
+    <div class="hint" style="margin:8px 0 0 0">「同步索引」只读取 Navidrome 更新本地曲库索引；「扫描并同步索引」会先让 Navidrome 扫描文件（手动移动过文件后用它）。红心同步会真实写入 ListenBrainz，建议先预览。</div>
+  </div>
+</div>
+
+<div class="rv hide" id="rv-list">
+  <div class="card">
+    <div class="tools">
+      <div class="seg auto" id="lstType"><button data-v="daily" class="on">Daily Jams</button><button data-v="weekly_exploration">Weekly Exploration</button><button data-v="weekly_jams">Weekly Jams</button></div>
+      <select id="lstBatch"></select>
+    </div>
+    <div class="chips" id="lstStates"></div>
+    <div id="lstMeta" class="sub" style="margin:6px 0"></div>
+    <div class="tbl" id="lstItems" style="max-height:none"><div class="sub" style="padding:10px">暂无</div></div>
+  </div>
+</div>
+
+</div>
+
+<div class="panel" id="p-set">
+<div class="card" id="cSet">
+  <div class="group first"><h3>通知</h3>
+    <div class="f"><span class="lb">Bark 地址</span>
+      <div class="c"><input type="text" id="bark" placeholder="https://api.day.app/你的key/（留空=关闭）"></div></div>
+    <div class="hint" id="barkHint"></div>
+    <div class="acts"><button class="ghost" onclick="testBark()">保存并测试</button><button onclick="saveBark()">保存</button></div>
+  </div>
+
+  <div class="group"><h3>下载账号</h3>
+    <div class="hint" id="dlSrcState" style="margin-left:0"></div>
+    <div class="f" id="dlSrcRow"><span class="lb">用哪个账号下载</span>
+      <div class="c"><select id="dlSrc"></select></div></div>
+    <div class="hint" id="dlSrcTip">歌单/每日推荐仍用当前登录账号获取；仅「下载」改用借用账号的黑胶 VIP 权限。借用账号必须是黑胶 VIP。</div>
+    <div class="acts" id="dlSrcActs"><button class="ghost" id="borrowRm" onclick="borrowRemove()">移除借用账号</button>
+      <button class="ghost" id="borrowScanBtn" onclick="borrowScan()">扫码添加</button>
+      <button class="ghost" id="borrowPasteBtn" onclick="$('borrowDlg').showModal()">粘贴导入</button>
+      <button id="borrowSaveBtn" onclick="saveDlSrc()">保存</button></div>
+  </div>
+
+  <div class="group"><h3>下载</h3>
+    <div class="f"><span class="lb">音质（VIP）</span>
+      <div class="c"><select id="qSel"></select></div></div>
+    <div class="hint">非 VIP 账号固定下载 MP3</div>
+    <div class="f"><span class="lb">请求间隔</span>
+      <div class="c"><input type="text" id="delay" class="w90"><span class="sub">秒/首，调大可降低被限流概率</span></div></div>
+    <div class="acts"><button onclick="saveDl()">保存</button></div>
+  </div>
+
+  <div class="group"><h3>音乐库去重</h3>
+    <div class="f"><span class="lb">音乐库</span>
+      <div class="c"><select id="libType"><option value="none">不使用（不检查音乐库）</option><option value="navidrome">Navidrome</option>
+        <option value="music-tag-web">music-tag-web (MySQL)</option></select></div></div>
+    <div class="hint" id="libState"></div>
+    <div id="libNav" class="hide">
+      <div class="f"><span class="lb">地址</span><div class="c"><input type="text" id="nHost" placeholder="如 http://192.168.0.6:4533"></div></div>
+      <div class="f"><span class="lb">用户名</span><div class="c"><input type="text" id="nUser" placeholder="用户名"></div></div>
+      <div class="f"><span class="lb">密码</span><div class="c"><input type="password" id="nPass" placeholder="密码" autocomplete="new-password"></div></div>
+    </div>
+    <div id="libSql" class="hide">
+      <div class="f"><span class="lb">MySQL 地址</span><div class="c"><input type="text" id="mHost" placeholder="地址"><input type="text" id="mPort" class="w90" placeholder="端口"></div></div>
+      <div class="f"><span class="lb">数据库名</span><div class="c"><input type="text" id="mDb" placeholder="数据库名"></div></div>
+      <div class="f"><span class="lb">用户名</span><div class="c"><input type="text" id="mUser" placeholder="用户名"></div></div>
+      <div class="f"><span class="lb">密码</span><div class="c"><input type="password" id="mPass" placeholder="密码" autocomplete="new-password"></div></div>
+    </div>
+    <div class="hint" id="libHint">跳过音乐库里已有的歌曲；库里仅有 MP3 的歌仍会下载。密码保存后不会回显，留空表示不修改。</div>
+    <div class="acts"><button class="ghost hide" id="libTestBtn" onclick="testLib()">测试连接</button><button onclick="saveLib()">保存</button></div>
+  </div>
+</div>
+<details class="card lbset" id="lbSetBox">
+  <summary><b>推荐联动设置（ListenBrainz）</b> <span class="sub">高级设置，点击展开</span></summary>
+  <div class="warnbox">⚠ 这里的选项会影响自动下载、转正、清理（含删除试听库文件）和写入 ListenBrainz。<b>不熟悉请不要乱改</b>；按「总开关」下面的各项从上到下配置并「测试连接」通过后，再打开总开关。</div>
+<div class="card" id="cLbOn">
+  <h2>ListenBrainz 推荐联动 <span class="sub" id="lbTz"></span></h2>
+  <div class="f"><span class="lb">总开关</span><div class="c"><label class="sw"><input type="checkbox" id="lbEnabled"> 启用推荐联动</label></div></div>
+  <div class="hint">关闭时不会同步推荐、下载、转正或清理。建议先把下面各项配置并测试通过，再打开。所有时间按容器 TZ 解释。下载音质、请求间隔沿用「设置」页。</div>
+  <div class="acts"><button onclick="lbSave('enabled')">保存</button></div>
+</div>
+<div class="card" id="cLbLb">
+  <h2>ListenBrainz</h2>
+  <div class="f"><span class="lb">用户名</span><div class="c"><input type="text" id="lbUser" placeholder="ListenBrainz 用户名"></div></div>
+  <div class="f"><span class="lb">User Token</span><div class="c"><input type="password" id="lbToken" placeholder="Token" autocomplete="new-password"></div></div>
+  <div class="hint">Token 在 ListenBrainz 网站「设置」页获取。保存后不会回显，留空表示不修改。</div>
+  <div class="hint" id="lbLbRes"></div>
+  <div class="acts"><button class="ghost" onclick="lbTest('listenbrainz','listenbrainz','lbLbRes')">测试连接</button><button onclick="lbSave('listenbrainz')">保存</button></div>
+</div>
+<div class="card" id="cLbNd">
+  <h2>Navidrome</h2>
+  <div class="f"><span class="lb">地址</span><div class="c"><input type="text" id="ndUrl" placeholder="如 http://10.0.0.6:4533"></div></div>
+  <div class="f"><span class="lb">用户名</span><div class="c"><input type="text" id="ndUser" placeholder="用户名"></div></div>
+  <div class="f"><span class="lb">密码</span><div class="c"><input type="password" id="ndPass" placeholder="密码" autocomplete="new-password"></div></div>
+  <div class="f"><span class="lb">主库</span><div class="c"><select id="ndMain"></select></div></div>
+  <div class="f"><span class="lb">试听库</span><div class="c"><select id="ndDisc"></select></div></div>
+  <div class="hint">点「测试连接」后可从下拉里选择；主库和试听库需是 Navidrome 里两个不同的音乐库。</div>
+  <div class="hint" id="lbNdRes"></div>
+  <div class="acts"><button class="ghost" onclick="lbTest('navidrome','navidrome','lbNdRes')">测试连接</button><button onclick="lbSave('navidrome')">保存</button></div>
+</div>
+<div class="card" id="cLbDir">
+  <h2>目录</h2>
+  <div class="f"><span class="lb">主库目录</span><div class="c"><input type="text" id="dirMain" placeholder="/music/songs"></div></div>
+  <div class="f"><span class="lb">试听库目录</span><div class="c"><input type="text" id="dirDisc" placeholder="/music/discovery"></div></div>
+  <div class="hint">只填容器内路径（由 docker-compose 的目录映射决定），不要填宿主机路径。</div>
+  <div class="f"><span class="lb">多歌手连接符</span><div class="c"><input type="text" id="artistSep" class="w90" maxlength="10"><span class="sub">红心转正进主库时，目录名/文件名里多个歌手的连接方式</span></div></div>
+  <div class="hint">默认「, 」（如 <b>P!nk, Nate Ruess</b>），也可填「 &amp; 」等。填「 / 」会变成 MoviePilot 的全角斜杠写法（A ／ B）。首尾空格有效。</div>
+  <div id="lbDirRes" class="sub" style="margin:0 0 6px 0"></div>
+  <div class="acts"><button class="ghost" onclick="lbTest('dirs','dirs','lbDirRes')">检查目录</button><button onclick="lbSave('dirs')">保存</button></div>
+</div>
+<div class="card" id="cLbStrat">
+  <h2>推荐策略</h2>
+  <div id="stratRows"></div>
+  <div class="hint">最大新下载数只限制「需要新下载」的歌曲，主库/试听库里已有的不计入；0 表示不限。</div>
+  <div class="acts"><button onclick="lbSave('strategy')">保存</button></div>
+</div>
+<div class="card" id="cLbDisc">
+  <h2>试听库策略</h2>
+  <div class="f"><span class="lb">保留天数</span><div class="c"><input type="text" id="dRet" class="w90"><span class="sub">天（从进入试听库起算；已红心/已转正/已保留的不清理）</span></div></div>
+  <div class="f"><span class="lb">回收站保留</span><div class="c"><input type="text" id="dTrash" class="w90"><span class="sub">天（清理先移入回收站，到期才真正删除）</span></div></div>
+  <div class="f"><span class="lb">歌单保留</span><div class="c"><input type="text" id="dPl" class="w90"><span class="sub">天（过期的推荐歌单会从 Navidrome 删除）</span></div></div>
+  <div class="f"><span class="lb">自动转正</span><div class="c"><label class="sw"><input type="checkbox" id="dPromote"> 红心后自动移入主库</label></div></div>
+  <div class="f"><span class="lb">自动清理</span><div class="c"><label class="sw"><input type="checkbox" id="dClean"> 定时清理过期试听歌曲</label></div></div>
+  <div class="f"><span class="lb">未找到冷却</span><div class="c"><input type="text" id="rCool" class="w90"><span class="sub">天内不重复搜索</span></div></div>
+  <div class="f"><span class="lb">下载重试</span><div class="c"><input type="text" id="rRetry" class="w90"><span class="sub">次（下载失败后的最大重试次数）</span></div></div>
+  <div class="acts"><button onclick="lbSave('discovery')">保存</button></div>
+</div>
+<div class="card" id="cLbLove">
+  <h2>红心同步到 ListenBrainz</h2>
+  <div class="f"><span class="lb">启用</span><div class="c"><label class="sw"><input type="checkbox" id="loveOn"> 把 Navidrome 里的红心同步为 ListenBrainz 的 love</label></div></div>
+  <div class="f"><span class="lb">每轮上限</span><div class="c"><input type="text" id="loveMax" class="w90"><span class="sub">首（首次启用时红心较多，会分几轮提交完）</span></div></div>
+  <div class="hint"><b>会真实写入你的 ListenBrainz，影响推荐。</b>只增不减：在 Navidrome 取消红心不会取消 LB 上的 love。只提交有把握的 MBID（优先用推荐歌单自带的，其次 Navidrome 标签，最后按歌手+歌名查询并核对），查不准的会跳过。名字查询较慢，每轮最多查 100 首新的，其余下一轮继续。</div>
+  <div class="acts"><button onclick="lbSave('love')">保存</button></div>
+</div>
+<div class="card" id="cLbSch">
+  <h2>定时</h2>
+  <div class="f"><span class="lb">每日同步</span><div class="c"><input type="time" id="sDaily" style="width:120px"></div></div>
+  <div class="f"><span class="lb">每周同步</span><div class="c"><select id="sWeekday" style="max-width:110px"></select><input type="time" id="sWeekly" style="width:120px"></div></div>
+  <div class="f"><span class="lb">转正检查</span><div class="c"><input type="text" id="sPromote" class="w90"><span class="sub">分钟一次</span></div></div>
+  <div class="f"><span class="lb">红心同步</span><div class="c"><input type="text" id="sLove" class="w90"><span class="sub">分钟一次</span></div></div>
+  <div class="f"><span class="lb">清理时间</span><div class="c"><input type="time" id="sClean" style="width:120px"></div></div>
+  <div class="hint">错过的时间点不会补跑。</div>
+  <div class="acts"><button onclick="lbSave('schedule')">保存</button></div>
+</div>
+</details>
+</div>
+</div>
+
+<dialog id="recConfirm">
+  <h2 style="font-size:15px;margin:0 0 8px" id="rcTitle"></h2>
+  <div id="rcBody" style="white-space:pre-wrap;font-size:13px"></div>
+  <div class="acts"><button class="ghost" onclick="$('recConfirm').close('no')">取消</button><button id="rcOk" onclick="$('recConfirm').close('yes')">确定</button></div>
+</dialog>
+<dialog id="candDlg">
+  <h2 style="font-size:15px;margin:0 0 6px">本地有多首候选，请选择是哪一首</h2>
+  <div class="sub" id="candFor" style="margin-bottom:8px"></div>
+  <div id="candList"></div>
+  <div class="acts"><button class="ghost" onclick="$('candDlg').close()">关闭</button></div>
+</dialog>
+<dialog id="loveDlg" style="width:min(720px,96vw)">
+  <h2 style="font-size:15px;margin:0 0 6px">红心同步预览</h2>
+  <div class="sub" id="loveMeta" style="margin-bottom:8px"></div>
+  <div class="tbl" id="loveList" style="max-height:50vh"></div>
+  <div class="acts"><button class="ghost" onclick="$('loveDlg').close()">关闭</button></div>
+</dialog>
+<dialog id="borrowDlg">
+  <h2 style="font-size:15px;margin:0 0 6px">粘贴导入借用账号</h2>
+  <div class="sub" style="margin-bottom:8px">粘贴对方 <code>web_state.json</code> 里的 <b>account</b> 节点（整个文件、account 节点或纯 cookie 都可以）。会向网易云重新校验，非黑胶 VIP 会被拒绝。</div>
+  <textarea id="borrowText" rows="8" style="width:100%;box-sizing:border-box;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:12px/1.4 monospace" placeholder='{"cookies": {"MUSIC_U": "..."}, ...}'></textarea>
+  <div class="acts"><button class="ghost" onclick="$('borrowDlg').close()">取消</button><button onclick="borrowImport()">导入</button></div>
+</dialog>
+<dialog id="borrowQrDlg">
+  <h2 style="font-size:15px;margin:0 0 6px">扫码添加借用账号</h2>
+  <div class="sub" style="margin-bottom:8px">请让<b>借用账号本人</b>用网易云音乐 App 扫码确认（必须是黑胶 VIP）。</div>
+  <div class="qrrow"><div id="bqr" style="width:232px;height:232px;background:#fff;border-radius:8px;line-height:0"></div>
+    <div><div id="bqrMsg">正在生成二维码…</div></div></div>
+  <div class="acts"><button class="ghost" onclick="borrowScanStop()">关闭</button></div>
+</dialog>
+<dialog id="schedDlg">
+  <h2 style="font-size:15px;margin:0 0 6px" id="schedTitle">新建定时任务</h2>
+  <div class="f"><span class="lb">名称</span><div class="c"><input type="text" id="sName" placeholder="名称（可选）"></div></div>
+  <div class="f"><span class="lb">来源</span><div class="c"><select id="sType"><option value="daily">每日推荐</option><option value="today">今日日期歌单</option>
+    <option value="playlist">指定歌单</option><option value="album">指定专辑</option></select></div></div>
+  <div class="f hide" id="sIdRow"><span class="lb">歌单/专辑</span><div class="c"><input type="text" id="sId" placeholder="歌单/专辑 ID 或链接"></div></div>
+  <div class="f"><span class="lb">保存到</span><div class="c"><select id="sDir"></select><input type="text" id="sNewDir" placeholder="或新建子目录名"></div></div>
+  <div class="f"><span class="lb">每天</span><div class="c"><input type="time" id="sTime" value="21:00" class="w90" style="width:120px">
+    <button class="ghost sm" onclick="addTime()">添加时间点</button></div></div>
+  <div class="chips" id="sTimes" style="margin-left:108px"></div>
+  <div class="f"><span class="lb">状态</span><div class="c"><label class="sw"><input type="checkbox" id="sOn" checked> 启用</label></div></div>
+  <div class="acts"><button class="ghost" onclick="$('schedDlg').close()">取消</button><button onclick="saveSched()">保存</button></div>
+</dialog>
+<div id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S = {account: {logged_in: false}, settings: {}}, srcType = 'daily', tracks = [], qrKey = null, qrTimer = null;
+let sTimes = [], sEditId = null, schedules = [], dirs = [], jobsTimer = null, tab = 'dl';
+
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 2600); }
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  let r;
+  try { r = await fetch(path, opt); } catch (e) { throw new Error('无法连接服务器'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || ('请求失败 ' + r.status)); e.needLogin = !!j.need_login; e.busy = !!j.busy; throw e; }
+  return j;
+}
+const run = async (fn) => { try { return await fn(); } catch (e) { toast(e.message); if (e.needLogin) loadState(); } };
+
+/* ---------------- 推荐联动（ListenBrainz）设置 ---------------- */
+let LB = null, lbFolders = [];
+const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+async function loadLb() { try { LB = await api('/api/lb/settings'); } catch (e) { toast(e.message); return; } renderLb(); }
+function lbFolderOptions(sel, current) {
+  const list = lbFolders.slice();
+  if (current != null && !list.some(f => f.id === current)) list.push({id: current, name: '（先点测试连接获取名称）'});
+  sel.innerHTML = '<option value="">未选择</option>' + list.map(f => `<option value="${f.id}">${f.id} · ${esc(f.name)}</option>`).join('');
+  sel.value = current == null ? '' : String(current);
+}
+function renderLb() {
+  if (!LB) return;
+  const active = document.activeElement;
+  if (active && ['INPUT', 'SELECT'].includes(active.tagName) && $('p-rec').contains(active)) return;  // 输入时不覆盖
+  $('lbTz').textContent = '时区 ' + LB.timezone;
+  $('lbEnabled').checked = !!LB.enabled;
+  $('lbUser').value = LB.listenbrainz.username; $('lbToken').value = '';
+  $('lbToken').placeholder = LB.listenbrainz.has_token ? 'Token（已设置，留空不修改）' : 'Token';
+  const n = LB.navidrome;
+  $('ndUrl').value = n.url; $('ndUser').value = n.user; $('ndPass').value = '';
+  $('ndPass').placeholder = n.has_password ? '密码（已设置，留空不修改）' : '密码';
+  lbFolderOptions($('ndMain'), n.main_folder_id); lbFolderOptions($('ndDisc'), n.discovery_folder_id);
+  $('dirMain').value = LB.dirs.main; $('dirDisc').value = LB.dirs.discovery; $('artistSep').value = LB.naming.artist_separator;
+  $('stratRows').innerHTML = LB.rec_types.map(t => {
+    const x = LB.strategy[t.key];
+    return `<div class="f"><span class="lb">${esc(t.label)}</span><div class="c">
+      <label class="sw"><input type="checkbox" id="st-${t.key}-on" ${x.enabled ? 'checked' : ''}> 启用</label>
+      <span class="sub">最大新下载</span><input type="text" id="st-${t.key}-max" class="w90" value="${x.max_new}"></div></div>`;
+  }).join('');
+  const d = LB.discovery;
+  $('dRet').value = d.retention_days; $('dTrash').value = d.trash_days; $('dPl').value = d.playlist_keep_days;
+  $('dPromote').checked = !!d.auto_promote; $('dClean').checked = !!d.auto_cleanup;
+  $('loveOn').checked = !!LB.love.enabled; $('loveMax').value = LB.love.max_per_run;
+  $('rCool').value = LB.retry.not_found_cooldown_days; $('rRetry').value = LB.retry.download_max_retries;
+  const sc = LB.schedule;
+  $('sWeekday').innerHTML = WEEKDAYS.map((w, i) => `<option value="${i}">${w}</option>`).join('');
+  $('sWeekday').value = String(sc.weekly_weekday);
+  $('sDaily').value = sc.daily_time; $('sWeekly').value = sc.weekly_time; $('sClean').value = sc.cleanup_time;
+  $('sPromote').value = sc.promote_interval_min; $('sLove').value = sc.love_interval_min;
+}
+function lbPayload(group) {
+  const v = id => $(id).value, c = id => $(id).checked;
+  switch (group) {
+    case 'enabled': return {enabled: c('lbEnabled')};
+    case 'listenbrainz': return {listenbrainz: {username: v('lbUser'), token: v('lbToken')}};
+    case 'navidrome': return {navidrome: {url: v('ndUrl'), user: v('ndUser'), password: v('ndPass'),
+      main_folder_id: v('ndMain'), discovery_folder_id: v('ndDisc')}};
+    case 'dirs': return {dirs: {main: v('dirMain'), discovery: v('dirDisc')}, naming: {artist_separator: v('artistSep')}};
+    case 'strategy': { const o = {}; LB.rec_types.forEach(t => o[t.key] = {enabled: c(`st-${t.key}-on`), max_new: v(`st-${t.key}-max`)}); return {strategy: o}; }
+    case 'discovery': return {discovery: {retention_days: v('dRet'), trash_days: v('dTrash'), playlist_keep_days: v('dPl'),
+      auto_promote: c('dPromote'), auto_cleanup: c('dClean')}, retry: {not_found_cooldown_days: v('rCool'), download_max_retries: v('rRetry')}};
+    case 'love': return {love: {enabled: c('loveOn'), max_per_run: v('loveMax')}};
+    case 'schedule': return {schedule: {daily_time: v('sDaily'), weekly_weekday: v('sWeekday'), weekly_time: v('sWeekly'),
+      cleanup_time: v('sClean'), promote_interval_min: v('sPromote'), love_interval_min: v('sLove')}};
+  }
+}
+async function lbSave(group) {
+  await run(async () => { LB = await api('/api/lb/settings', lbPayload(group)); document.activeElement.blur(); renderLb(); toast('已保存'); });
+}
+async function lbTest(target, group, resId) {
+  const box = $(resId); box.textContent = '测试中…';
+  try {
+    const r = await api('/api/lb/test', {target, settings: lbPayload(group)});
+    if (target === 'navidrome') {
+      lbFolders = r.folders || [];
+      lbFolderOptions($('ndMain'), $('ndMain').value === '' ? null : Number($('ndMain').value));
+      lbFolderOptions($('ndDisc'), $('ndDisc').value === '' ? null : Number($('ndDisc').value));
+    }
+    if (target === 'dirs') {
+      box.innerHTML = '<b>' + esc(r.message) + '</b>' + r.checks.map(c =>
+        `<div style="margin-top:2px"><span style="color:var(${c.ok ? '--ok' : (c.warn ? '--warn' : '--err')})">${c.ok ? '✔' : (c.warn ? '！' : '✘')}</span> ${esc(c.name)}：${esc(c.msg)}</div>`).join('');
+    } else { box.textContent = r.message; }
+  } catch (e) { box.textContent = '失败：' + e.message; }
+}
+
+/* ---------------- 推荐联动：概览 / 推荐歌单 / 任务 ---------------- */
+const REC_VIEWS = ['dash', 'list'];
+let recView = 'dash', recTimer = null, lstType = 'daily', lstBatchId = null, lstState = '', lstData = {};
+let runOpenId = null, runAfter = 0, runText = '', runLogTimer = null;
+try { recView = localStorage.getItem('recView') || 'dash'; } catch (e) {}
+const ST_ZH = {PENDING: '待处理', DOWNLOADING: '下载中', LOCAL_MAIN: '主库已有', LOCAL_DISCOVERY: '试听库', NOT_FOUND: '未找到',
+  DOWNLOAD_FAILED: '下载失败', MULTIPLE_MATCH: '待选择', SKIPPED: '已跳过', PROMOTING: '转正中', PROMOTED: '已转正', EXPIRED: '已过期'};
+const ST_CLS = {LOCAL_MAIN: 'ok', LOCAL_DISCOVERY: 'ok', PROMOTED: 'ok', PROMOTING: 'run', DOWNLOADING: 'run', NOT_FOUND: 'warn',
+  MULTIPLE_MATCH: 'warn', SKIPPED: 'warn', DOWNLOAD_FAILED: 'bad'};
+const KIND_ZH = {sync: '推荐同步', promote: '红心转正', cleanup: '过期清理', reindex: '同步索引', love: '红心同步', love_preview: '红心预览'};
+const RUN_ZH = {running: '运行中', done: '完成', failed: '失败', paused: '已暂停', interrupted: '被中断'};
+const RUN_CLS = {running: 'run', done: 'ok', failed: 'bad', paused: 'warn', interrupted: 'warn'};
+const REASON_ZH = {variant: '库里是电台版/单曲版，建议尽快替换为原版', not_found: '网易云没有这首', only_mp3: '只有 MP3（库只要无损）', no_copyright: '无版权/已下架', cooldown: '冷却期内不重复搜索',
+  over_limit: '超出最大新下载数', promote_conflict: '主库已有同名文件，未转正', promote_error: '转正出错，将自动重试', expired: '试听期满已清理',
+  exception: '处理出错', multiple: '本地有多个候选', download: '下载失败', api: '接口错误', invalid: '文件校验失败'};
+const STAT_ZH = {recommended: '推荐', downloaded: '新下载', local_main: '主库命中', local_discovery: '试听库命中', not_found: '未找到', failed: '失败',
+  skipped: '跳过', multiple: '待选择', errors: '出错', unresolved: '待认领', moved: '移入主库', promoted: '转正', conflicts: '冲突', restarred: '补星',
+  expired: '过期', purged: '回收站清除', playlists_deleted: '删旧歌单', submitted: '提交红心', would_submit: '预览将提交', already: 'LB已有',
+  starred: '红心', deferred: '留待下次', lookup_errors: '查询失败', lookup_deferred: '查询留待下轮', main: '主库', discovery: '试听库'};
+const fmtTime = t => (t || '').replace('T', ' ').slice(5, 16);
+const statsText = st => Object.entries(st || {}).filter(([, n]) => n).map(([k, n]) => `${STAT_ZH[k] || k} ${n}`).join('，');
+const stateBadges = c => Object.entries(c || {}).map(([k, n]) => `<span class="st ${ST_CLS[k] || ''}">${ST_ZH[k] || k} ${n}</span>`).join(' ');
+
+function recShow(v) {
+  if (v && REC_VIEWS.includes(v)) { recView = v; try { localStorage.setItem('recView', v); } catch (e) {} }
+  if (!REC_VIEWS.includes(recView)) recView = 'dash';
+  REC_VIEWS.forEach(x => $('rv-' + x).classList.toggle('hide', x !== recView));
+  document.querySelectorAll('#recNav button').forEach(b => b.classList.toggle('on', b.dataset.v === recView));
+  recStop();
+  if (recView === 'dash') dashLoad();
+  if (recView === 'list') listLoad();
+}
+document.querySelectorAll('#recNav button').forEach(b => b.onclick = () => recShow(b.dataset.v));
+function recStop() { clearTimeout(recTimer); recTimer = null; clearTimeout(runLogTimer); runLogTimer = null; }
+const recActive = v => tab === 'rec' && recView === v;
+function recSchedule(ms, fn) { clearTimeout(recTimer); recTimer = setTimeout(fn, ms); }
+
+/* ---- 概览 ---- */
+async function dashLoad() {
+  let d;
+  try { d = await api('/api/lb/dashboard'); } catch (e) { toast(e.message); return; }
+  if (!recActive('dash')) return;
+  renderDash(d);
+  api('/api/lb/schedule').then(r => {
+    $('dbNext').textContent = r.upcoming.length ? '计划：' + r.upcoming.map(u => `${u.task} ${u.next.slice(5)}`).join('　·　') + `（时区 ${r.timezone}）`
+      : (d.enabled ? '' : '总开关未启用，不会自动运行（在「设置」里打开）');
+  }).catch(() => {});
+  recSchedule(d.current_task ? 3000 : 15000, () => recActive('dash') && dashLoad());
+}
+function renderDash(d) {
+  $('dbEnabled').innerHTML = d.enabled ? '<span class="st ok">已启用</span>' : '<span class="st warn">未启用</span>';
+  const c = d.current_task, lr = d.last_run;
+  const trig = c ? (c.trigger === 'schedule' ? '定时' : c.trigger === 'queue' ? '下载队列' : '手动') : '';
+  const kv = (k, v) => `<span class="k">${k}</span><div>${v}</div>`;
+  $('dbCurrent').innerHTML = c
+    ? kv('状态', '<span class="st run">运行中</span>') + kv('任务', `${esc(KIND_ZH[c.type] || c.type)}（${trig}）`) + kv('开始于', esc(fmtTime(c.started_at))) +
+      (c.id ? kv('日志', `<a class="lnk" href="javascript:void 0" onclick="openRun(${c.id})">查看实时日志</a>`) : '')
+    : kv('状态', '空闲') + (lr ? kv('上次任务', `${esc(KIND_ZH[lr.type] || lr.type)} <span class="st ${RUN_CLS[lr.status] || ''}">${esc(RUN_ZH[lr.status] || lr.status)}</span>`) +
+      kv('完成于', esc(fmtTime(lr.started_at))) + (statsText(lr.stats) ? kv('结果', esc(statsText(lr.stats))) : '') +
+      kv('日志', `<a class="lnk" href="javascript:void 0" onclick="openRun(${lr.id})">查看日志</a>`) : '');
+  const sum = k => Object.values(d.latest_batches).reduce((a, b) => a + (b.counts[k] || 0), 0);
+  const ls = (d.last_sync && d.last_sync.stats) || {}, T = d.totals, P = d.pending_cleanup;
+  const tiles = [
+    ['今日推荐', d.recommended_today, ''], ['本次新下载', ls.downloaded || 0, ls.downloaded ? 'ok' : ''],
+    ['主库命中', sum('LOCAL_MAIN'), ''], ['试听库命中', sum('LOCAL_DISCOVERY'), ''],
+    ['未找到', sum('NOT_FOUND'), sum('NOT_FOUND') ? 'warn' : ''], ['下载失败', sum('DOWNLOAD_FAILED'), sum('DOWNLOAD_FAILED') ? 'bad' : ''],
+    ['已转正（累计）', T.promoted, T.promoted ? 'ok' : ''], ['待清理', P.files, P.files ? 'warn' : '', `试听满 ${P.retention_days} 天`],
+    ['待选择候选', T.multiple_match, T.multiple_match ? 'warn' : ''], ['试听库在库', T.in_discovery, ''],
+  ];
+  $('dbTiles').innerHTML = tiles.map(([l, v, cls, sub]) => `<div class="tile ${cls}"><b>${v}</b><span>${l}${sub ? ' · ' + sub : ''}</span></div>`).join('');
+  $('dbBatches').innerHTML = Object.entries(d.latest_batches).map(([type, b]) =>
+    `<div class="batch"><div><b>${esc(b.label)}</b> <span class="sub">${esc(b.date)} · 共 ${b.total} 首${b.status === 'active' ? ' · 进行中' : ''}</span></div>
+     <a class="lnk" href="javascript:void 0" onclick="openList('${type}', ${b.batch_id})">查看 ›</a>
+     <div class="badges">${stateBadges(b.counts)}</div></div>`).join('') ||
+    '<span class="sub">还没有同步过推荐。ListenBrainz 目前没有歌单时同步会正常结束。</span>';
+}
+
+/* ---- 快捷操作（会改动磁盘/写外部服务的都先确认并显示具体数字） ---- */
+function confirmBox(title, body, ok) {
+  return new Promise(res => {
+    $('rcTitle').textContent = title; $('rcBody').textContent = body; $('rcOk').textContent = ok || '确定';
+    const d = $('recConfirm'); d.returnValue = ''; d.onclose = () => res(d.returnValue === 'yes'); d.showModal();
+  });
+}
+async function recRun(body, label) {
+  try { await api('/api/lb/action', body); toast(label + ' 已开始'); recShow('dash'); }
+  catch (e) { if (e.busy) { toast('已有任务在运行，请等它结束：' + e.message); dashLoad(); } else toast(e.message); }
+}
+const actSync = () => recRun({kind: 'sync'}, '推荐同步');
+async function actPromote() {
+  if (await confirmBox('一键转正红心曲目', '把试听库里已在 Navidrome 标了红心的歌移入主库。\n只新增文件：主库里已有同名文件时会跳过并记录，不会覆盖或删除任何文件。', '转正')) recRun({kind: 'promote'}, '红心转正');
+}
+async function actCleanup() {
+  let pv; try { pv = await api('/api/lb/cleanup/preview'); } catch (e) { toast(e.message); return; }
+  if (!pv.due_files) { toast('没有需要清理的过期歌曲'); return; }
+  const p = pv.protected;
+  const ok = await confirmBox('立即清理过期文件',
+    `将清理 ${pv.due_files} 首试听库歌曲（试听满 ${pv.retention_days} 天且未红心）。\n文件先移入回收站，到期后才真正删除；主库不受影响。\n受保护、不会清理：红心 ${p.protected_starred}、保留 ${p.protected_keep}、已转正 ${p.protected_promoted}。` +
+    (pv.stale_stars ? '\n\n注意：暂时读不到 Navidrome 的最新红心，使用的是上次同步的标记。' : ''), '清理');
+  if (ok) recRun({kind: 'cleanup'}, '过期清理');
+}
+async function actLovePreview() {
+  toast('预览开始：名字查询较慢，红心很多时首次可能要十几分钟，可在「任务」里看进度');
+  recRun({kind: 'love', dry_run: true}, '红心同步预览');
+}
+async function showLovePreview() {
+  let r; try { r = await api('/api/lb/love/preview'); } catch (e) { toast(e.message); return; }
+  const pv = r.preview;
+  if (!pv) { toast('还没有预览结果，先点「红心同步：预览」'); return; }
+  const st = pv.stats || {};
+  $('loveMeta').textContent = `预览于 ${fmtTime(pv.at)}：红心 ${st.starred || 0} 首 · 将提交 ${st.would_submit || 0} 首 · LB 已有 ${st.already || 0} · 解析不出 ${st.unresolved || 0}` +
+    (st.deferred ? ` · 超出本轮上限留待下次 ${st.deferred}` : '') + (st.lookup_deferred ? ` · 名字查询留待下轮 ${st.lookup_deferred}` : '');
+  const SRC = {item: '推荐歌单', navidrome: 'Navidrome 标签', lookup: '名字查询'};
+  $('loveList').innerHTML = pv.plan.map(p => `<div class="it" style="grid-template-columns:minmax(0,1fr) 110px"><div class="nm">${esc(p.artist)} - ${esc(p.title)}</div><span class="sub">${SRC[p.source] || p.source}</span></div>`).join('') ||
+    '<div class="sub" style="padding:10px">没有需要提交的</div>';
+  $('loveDlg').showModal();
+}
+async function actLove() {
+  let pv = null; try { pv = (await api('/api/lb/love/preview')).preview; } catch (e) {}
+  const n = pv && pv.stats ? pv.stats.would_submit || 0 : null;
+  const ok = await confirmBox('红心同步：提交到 ListenBrainz',
+    '会把 Navidrome 里的红心真实提交到你的 ListenBrainz（影响推荐），只增不减，无法在这里撤销。\n' +
+    (n === null ? '你还没有做过预览，强烈建议先点「红心同步：预览」确认会提交哪些。' : `上次预览显示本轮将提交 ${n} 首（受每轮上限限制，其余下轮继续）。`) +
+    '\n需要先在「设置 → 红心同步」里打开开关。', '提交');
+  if (ok) recRun({kind: 'love'}, '红心同步');
+}
+
+/* ---- 推荐歌单 ---- */
+document.querySelectorAll('#lstType button').forEach(b => b.onclick = () => { lstType = b.dataset.v; lstBatchId = null; lstState = ''; listLoad(); });
+$('lstBatch').onchange = () => { lstBatchId = Number($('lstBatch').value); lstState = ''; listItems(); };
+function openList(type, batchId) { lstType = type; lstBatchId = batchId; lstState = ''; recShow('list'); }
+async function listLoad() {
+  document.querySelectorAll('#lstType button').forEach(b => b.classList.toggle('on', b.dataset.v === lstType));
+  let r; try { r = await api('/api/lb/batches?type=' + lstType); } catch (e) { toast(e.message); return; }
+  const bs = r.batches;
+  $('lstBatch').innerHTML = bs.map(b => `<option value="${b.id}">${esc(b.date)} · 共 ${b.total} 首${b.status === 'active' ? '（进行中）' : ''}</option>`).join('');
+  if (!bs.length) { $('lstItems').innerHTML = '<div class="sub" style="padding:10px">还没有这一类的推荐。</div>'; $('lstStates').innerHTML = ''; $('lstMeta').textContent = ''; return; }
+  if (!bs.some(b => b.id === lstBatchId)) lstBatchId = bs[0].id;
+  $('lstBatch').value = String(lstBatchId);
+  listItems();
+}
+async function listItems() {
+  let r; try { r = await api(`/api/lb/items?batch=${lstBatchId}` + (lstState ? '&state=' + lstState : '')); } catch (e) { toast(e.message); return; }
+  const total = Object.values(r.counts).reduce((a, b) => a + b, 0);
+  $('lstStates').innerHTML = `<span style="cursor:pointer;${lstState ? '' : 'font-weight:600;'}" onclick="setLstState('')">全部 ${total}</span>` +
+    Object.entries(r.counts).map(([k, n]) => `<span style="cursor:pointer;${lstState === k ? 'font-weight:600;' : ''}" onclick="setLstState('${k}')">${ST_ZH[k] || k} ${n}</span>`).join('');
+  $('lstMeta').textContent = `${r.batch.label} · LB 生成于 ${r.batch.date}`;
+  lstData = {}; r.items.forEach(i => lstData[i.id] = i);
+  $('lstItems').innerHTML = r.items.map(i => {
+    const reason = i.reason_kind === 'variant' && i.reason ? i.reason : i.reason_kind ? (REASON_ZH[i.reason_kind] || i.reason_kind) + (i.reason && !REASON_ZH[i.reason_kind] ? '：' + i.reason : '') : '';
+    const btns = [];
+    if (i.state === 'LOCAL_DISCOVERY') btns.push(i.keep ? `<button class="ghost sm" onclick="itemAct(${i.id},'unkeep')">取消保留</button>` : `<button class="ghost sm" onclick="itemAct(${i.id},'keep')">保留</button>`);
+    if (['NOT_FOUND', 'DOWNLOAD_FAILED', 'SKIPPED'].includes(i.state) || (i.state === 'LOCAL_DISCOVERY' && ['promote_conflict', 'promote_error'].includes(i.reason_kind)))
+      btns.push(`<button class="ghost sm" onclick="itemAct(${i.id},'retry')">重试</button>`);
+    if (i.state === 'MULTIPLE_MATCH') btns.push(`<button class="sm" onclick="openCand(${i.id})">选择</button>`);
+    return `<div class="rit"><div class="nm"><div><b>${esc(i.title)}</b></div><div class="sub">${esc(i.artist)}${i.album ? ' · ' + esc(i.album) : ''} · 推荐于 ${esc(i.recommended_at)}</div>
+      ${i.path ? `<div class="pth">${esc(i.path)}</div>` : ''}</div>
+      <div class="stc"><span class="st ${ST_CLS[i.state] || ''}">${ST_ZH[i.state] || i.state}</span>
+        ${i.starred ? '<span class="tag ok">♥ 红心</span>' : ''}${i.keep ? '<span class="tag">保留</span>' : ''}${i.promoted ? '<span class="tag ok">已转正</span>' : ''}
+        ${reason ? `<div class="sub">${esc(reason)}</div>` : ''}</div>
+      <div class="acts" style="margin:0">${btns.join('')}</div></div>`;
+  }).join('') || '<div class="sub" style="padding:10px">没有符合条件的歌曲</div>';
+}
+function setLstState(k) { lstState = k; listItems(); }
+async function itemAct(id, action, arg) {
+  try { await api('/api/lb/item', {id, action, arg: arg || ''}); toast(action === 'retry' ? '已加入重试，下次同步会处理' : '已更新'); listItems(); }
+  catch (e) { toast(e.message); }
+}
+function openCand(id) {
+  const i = lstData[id]; if (!i) return;
+  $('candFor').textContent = `${i.artist} - ${i.title}`;
+  $('candList').innerHTML = i.candidates.map(c => `<div class="sched"><div class="grow"><b>${esc(c.title)}</b> <span class="sub">${esc(c.artist)} · ${esc(c.album)} · ${c.duration ? Math.floor(c.duration / 60) + ':' + String(c.duration % 60).padStart(2, '0') : '时长未知'}</span>
+    <div class="sub">${c.library === 'main' ? '主库' : '试听库'}</div></div><button class="sm" onclick="chooseCand(${id}, '${esc(c.nd_song_id)}')">就是这首</button></div>`).join('') || '<div class="sub">没有候选</div>';
+  $('candDlg').showModal();
+}
+async function chooseCand(id, songId) { $('candDlg').close(); await itemAct(id, 'choose', songId); }
+
+/* ---- 任务 ---- */
+async function runsLoad() {
+  let r; try { r = await api('/api/lb/runs'); } catch (e) { toast(e.message); return; }
+  if (tab !== 'jobs' || jKind === 'dl') return;
+  const runs = r.runs.filter(x => (!jTrig || (x.trigger === 'schedule' ? 'schedule' : 'manual') === jTrig) && (!$('jFailed').checked || x.status === 'failed'));
+  $('runsBox').innerHTML = runs.map(x => `<div class="run" id="run-${x.id}"><div class="rh" onclick="toggleRun(${x.id})">
+      <b>${esc(KIND_ZH[x.type] || x.type)}</b><span class="tag">${x.trigger === 'schedule' ? '定时' : '手动'}</span>
+      <span class="st ${RUN_CLS[x.status] || ''}">${esc(RUN_ZH[x.status] || x.status)}</span><span class="sub">${esc(fmtTime(x.started_at))}</span>
+      <span class="sub" style="flex:1;min-width:160px">${esc(statsText(x.stats))}${x.summary ? ' · ' + esc(x.summary) : ''}</span></div>
+      <div class="rb ${runOpenId === x.id ? '' : 'hide'}" id="rb-${x.id}"><pre class="rlog" id="rlog-${x.id}"></pre></div></div>`).join('') || '<div class="sub">还没有任务记录</div>';
+  if (runOpenId && $('rlog-' + runOpenId)) $('rlog-' + runOpenId).innerHTML = runText;
+  recSchedule(r.current ? 3000 : 15000, () => tab === 'jobs' && runsLoad());
+}
+function toggleRun(id) {
+  if (runOpenId === id) { runOpenId = null; clearTimeout(runLogTimer); const b = $('rb-' + id); if (b) b.classList.add('hide'); return; }
+  openRun(id);
+}
+function openRun(id) {
+  if (runOpenId && runOpenId !== id && $('rb-' + runOpenId)) $('rb-' + runOpenId).classList.add('hide');
+  runOpenId = id; runText = ''; runAfter = 0;
+  if (tab !== 'jobs') { jKind = 'lb'; syncKind(); showTab('jobs'); setTimeout(() => runLogs(id, true), 500); return; }
+  const b = $('rb-' + id); if (b) b.classList.remove('hide');
+  runLogs(id, true);
+}
+async function runLogs(id, reset) {
+  clearTimeout(runLogTimer);
+  let r; try { r = await api(`/api/lb/run?id=${id}&after=${reset ? 0 : runAfter}`); } catch (e) { toast(e.message); return; }
+  if (runOpenId !== id) return;
+  if (reset) runText = '';
+  r.logs.forEach(l => { runText += `<div class="${l.level === 'ERROR' ? 'E' : l.level === 'WARNING' ? 'W' : ''}">${esc(l.ts.slice(11))} ${esc(l.msg)}</div>`; runAfter = l.id; });
+  const pre = $('rlog-' + id);
+  if (pre) { const bottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30; pre.innerHTML = runText; if (bottom) pre.scrollTop = pre.scrollHeight; }
+  if (r.running) runLogTimer = setTimeout(() => runLogs(id, false), 2000);
+}
+
+/* ---------------- Tab ---------------- */
+const TABS = ['dl', 'auto', 'jobs', 'rec', 'set'];
+function showTab(t, push) {
+  if (!TABS.includes(t)) t = 'dl';
+  tab = t;
+  TABS.forEach(x => $('p-' + x).classList.toggle('on', x === t));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  if (push !== false) history.replaceState(null, '', '#' + t);  // 刷新后停留在当前 Tab
+  if (t === 'auto') loadSchedules();
+  if (t === 'rec') recShow(); else recStop();
+  if (t === 'jobs') refreshJobsTab();
+  if (t === 'set') loadLb();
+}
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+window.addEventListener('hashchange', () => showTab(location.hash.slice(1), false));
+
+/* ---------------- 账号 / 扫码 ---------------- */
+async function loadState(refresh) {
+  try { S = await api('/api/state' + (refresh ? '?refresh=1' : '')); } catch (e) { toast(e.message); return; }
+  renderAcct(); renderSettings();
+  const ok = S.account.logged_in && !S.account.invalid;
+  $('main').classList.toggle('hide', !ok);
+  $('loginCard').classList.toggle('hide', ok);
+  if (!ok) {
+    $('loginMsg').textContent = S.account.invalid ? '登录已失效，请重新扫码。' : '尚未登录，请扫码。';
+    if (!qrKey && !qrLoading) qrStart();
+  } else { stopQr(); }
+  if (S.busy) pollJobs();
+}
+
+function renderAcct() {
+  const a = S.account, box = $('acctChip');
+  if (!a.logged_in) { box.innerHTML = ''; return; }
+  if (a.invalid) { box.innerHTML = '<span class="badge b-bad">登录已失效</span>'; return; }
+  const badge = a.is_vip ? '<span class="badge b-vip">黑胶 VIP</span>' : '<span class="badge b-mp3">非 VIP · 仅 MP3</span>';
+  const D = (S.settings && S.settings.download_account) || {};
+  // 登录账号已是 VIP 时直接用它下载，借用账号不生效，账号条也就不显示借用
+  const borrowed = !a.is_vip && S.settings && S.settings.download_source === 'borrowed' && D.exists;
+  const dl = borrowed ? (D.invalid ? `<span class="badge b-bad">借用账号已失效</span>`
+    : `<span class="sub">下载用：</span><span class="badge b-vip">${esc(D.nickname)} · 借用 VIP</span>`) : '';
+  box.innerHTML = `<img src="${esc(a.avatar)}" referrerpolicy="no-referrer" alt=""><b>${esc(a.nickname)}</b> ${borrowed ? '' : badge} ${dl}
+    <button class="ghost sm" onclick="logout()">退出登录</button>`;
+}
+
+let qrGen = 0;  // 二维码"代号"：每换一个二维码加一，用来丢弃过期请求的结果，保证图片与轮询的 key 始终对应
+function stopQr() { qrGen++; clearInterval(qrTimer); qrTimer = null; qrKey = null; }
+
+let qrLoading = false;  // 正在向服务端申请二维码（此时 qrKey 还是空，避免被重复触发）
+async function qrStart() {
+  const gen = ++qrGen;
+  clearInterval(qrTimer); qrTimer = null; qrKey = null; qrLoading = true;
+  $('qrMsg').textContent = '正在生成二维码…';
+  try {
+    const r = await api('/api/qr/new', {});
+    if (gen !== qrGen) return;  // 期间已有更新的二维码请求，丢弃本次结果
+    qrKey = r.key; $('qr').innerHTML = '<img alt="登录二维码" src="data:image/png;base64,' + r.png + '">';
+    $('qrMsg').textContent = '请用网易云音乐 App 扫码';
+    qrTimer = setInterval(qrPoll, 2000);
+  } catch (e) { if (gen === qrGen) { $('qrMsg').textContent = e.message + '（可点「刷新二维码」重试）'; qrKey = null; } }
+  finally { if (gen === qrGen) qrLoading = false; }
+}
+
+let qrPolling = false;
+async function qrPoll() {
+  if (!qrKey || document.hidden || qrPolling) return;
+  const gen = qrGen, key = qrKey;
+  qrPolling = true;
+  try {
+    const r = await api('/api/qr/check?key=' + encodeURIComponent(key));
+    if (gen !== qrGen) return;  // 轮询期间二维码已更换，结果作废
+    if (r.code === 803) { toast('登录成功'); stopQr(); await loadState(true); await initData(); }
+    else if (r.code === 802) $('qrMsg').textContent = '已扫码，请在手机上确认登录';
+    else if (r.code === 800) { $('qrMsg').textContent = '二维码已过期，正在刷新…'; qrPolling = false; qrStart(); }
+    else if (r.code === 801) $('qrMsg').textContent = '请用网易云音乐 App 扫码';
+    else $('qrMsg').textContent = r.message || '登录失败，请刷新二维码';
+  } catch (e) { if (gen === qrGen) $('qrMsg').textContent = e.message; }
+  finally { qrPolling = false; }
+}
+
+async function logout() {
+  if (!confirm('退出登录？已有定时任务将无法执行，直到重新扫码。')) return;
+  await run(async () => { await api('/api/logout', {}); await loadState(); });
+}
+
+/* ---------------- 下载来源 / 目录 ---------------- */
+document.querySelectorAll('#srcTabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#srcTabs button').forEach(x => x.classList.toggle('on', x === b));
+  srcType = b.dataset.t; $('pvBox').classList.add('hide'); tracks = [];
+  $('plRow').classList.toggle('hide', srcType !== 'playlist');
+  $('idRow').classList.toggle('hide', srcType !== 'album' && srcType !== 'playlist');
+  $('idLb').textContent = srcType === 'album' ? '专辑' : '或粘贴歌单';
+  $('idIn').placeholder = srcType === 'album' ? '专辑 ID 或分享链接' : '歌单 ID / 分享链接（填写后优先使用）';
+  if (srcType === 'playlist') loadPlaylists();
+});
+
+async function loadPlaylists() {
+  if (!S.account.logged_in) return;
+  await run(async () => {
+    const r = await api('/api/playlists'), sel = $('plSel');
+    sel.innerHTML = '<option value="">— 选择歌单 —</option>' + r.playlists.map(p =>
+      `<option value="${p.id}" data-n="${esc(p.name)}">${p.dated ? '📅 ' : ''}${esc(p.name)}（${p.count}）</option>`).join('');
+  });
+}
+
+function currentSource() {
+  if (srcType === 'daily' || srcType === 'today') return {type: srcType};
+  const typed = $('idIn').value.trim();
+  if (srcType === 'album') { if (!typed) throw new Error('请填写专辑 ID 或链接'); return {type: 'album', id: typed}; }
+  if (typed) return {type: 'playlist', id: typed};
+  const o = $('plSel').selectedOptions[0];
+  if (!o || !o.value) throw new Error('请选择或填写一个歌单');
+  return {type: 'playlist', id: o.value, name: o.dataset.n};
+}
+
+// 宿主机上的真实路径（由环境变量 HOST_DOWNLOAD_DIR 告知；未设置时是容器内路径），只用于显示
+const hostRoot = () => (S.host_dir || S.base_dir || '').replace(/\/+$/, '') || '/';
+const hostPath = sub => { sub = (sub || '').replace(/^\/+|\/+$/g, ''); const r = hostRoot(); return sub ? (r === '/' ? '' : r) + '/' + sub : r; };
+function updateDirHint() {
+  const sel = $('dirSel'), nv = ($('newDir').value || '').trim().replace(/^\/+|\/+$/g, '');
+  const p = hostPath(nv || sel.value);
+  $('dirHint').textContent = '将保存到：' + p + (!S.host_dir_set ? '（容器内路径；在 compose 里设置 HOST_DOWNLOAD_DIR 可显示宿主机路径）' : '');
+}
+$('dirSel').addEventListener('change', updateDirHint);
+$('newDir').addEventListener('input', updateDirHint);
+function fillDirSelect(sel, keep) {
+  const v = keep === undefined ? sel.value : keep;
+  sel.innerHTML = `<option value="">${esc(hostPath(''))}</option>` + dirs.map(d => `<option value="${esc(d)}">${esc(hostPath(d))}</option>`).join('');
+  if (dirs.includes(v)) sel.value = v;
+}
+async function loadDirs() {
+  await run(async () => {
+    dirs = (await api('/api/dirs')).dirs;
+    fillDirSelect($('dirSel')); fillDirSelect($('sDir'));
+    updateDirHint();
+  });
+}
+async function pickDir(selId, newId) {
+  const nv = $(newId).value.trim();
+  if (!nv) return $(selId).value;
+  await api('/api/mkdir', {path: nv});
+  await loadDirs(); $(selId).value = nv; $(newId).value = '';
+  return nv;
+}
+
+async function preview() {
+  await run(async () => {
+    const r = await api('/api/preview', {source: currentSource()});
+    if (r.missing) { toast('未找到名为 ' + r.name + ' 的歌单'); return; }
+    tracks = r.tracks;
+    $('pvName').textContent = r.name; $('pvCnt').textContent = '共 ' + r.tracks.length + ' 首';
+    $('pvList').innerHTML = r.tracks.map(t => `<label><input type="checkbox" class="pv" value="${t.id}" checked>
+      <span class="t">${esc(t.artists.join(' & '))} - ${esc(t.name)}</span><span class="sub">${esc(t.album)}</span></label>`).join('');
+    $('pvAll').checked = true; $('pvBox').classList.remove('hide');
+  });
+}
+$('pvAll').onchange = e => document.querySelectorAll('.pv').forEach(c => c.checked = e.target.checked);
+
+async function download(selected) {
+  await run(async () => {
+    const body = {source: currentSource(), subdir: await pickDir('dirSel', 'newDir')};
+    if (selected) {
+      body.track_ids = [...document.querySelectorAll('.pv:checked')].map(c => +c.value);
+      if (!body.track_ids.length) throw new Error('请至少选择一首歌曲');
+    }
+    await api('/api/download', body);
+    toast('已加入下载队列'); showTab('jobs'); pollJobs();  // 提交后自动跳到任务记录
+  });
+}
+
+/* ---------------- 设置 ---------------- */
+/* ---------------- 下载账号（借用账号） ---------------- */
+function renderDlSrc() {
+  const s = S.settings, D = s.download_account || {}, sel = $('dlSrc');
+  sel.innerHTML = '<option value="self">使用当前登录账号</option>' +
+    (D.exists ? `<option value="borrowed">使用借用账号：${esc(D.nickname)}（黑胶 VIP）</option>` : '');
+  sel.value = s.download_source === 'borrowed' && D.exists ? 'borrowed' : 'self';
+  const st = $('dlSrcState');
+  // 登录账号本身就是黑胶 VIP：直接用它下载，不需要借用账号——只留说明（和已有借用账号时的"移除"），其余控件隐藏
+  const vip = !!(S.account && S.account.is_vip);
+  ['dlSrcRow', 'dlSrcTip', 'borrowScanBtn', 'borrowPasteBtn', 'borrowSaveBtn'].forEach(id => $(id).classList.toggle('hide', vip));
+  $('borrowRm').classList.toggle('hide', !D.exists);
+  $('dlSrcActs').classList.toggle('hide', vip && !D.exists);
+  if (vip) {
+    st.textContent = '登录账号「' + S.account.nickname + '」已是黑胶 VIP，直接用它下载，无需借用账号。' + (!D.exists ? '' :
+      '已保存的借用账号「' + D.nickname + '」暂不使用' + (s.download_source === 'borrowed' ? '（登录账号的 VIP 到期后会自动改用它）' : '') + '。');
+    return;
+  }
+  if (!D.exists) st.textContent = '当前：用登录账号下载（非 VIP，只能下载 MP3）。想下无损？添加一个黑胶 VIP 借用账号';
+  else if (D.invalid) st.textContent = '⚠ 借用账号「' + D.nickname + '」登录已失效，选它下载的任务会失败。请重新扫码添加或粘贴导入';
+  else if (s.download_source === 'borrowed') st.textContent = '当前：用借用账号「' + D.nickname + '」的黑胶 VIP 下载（列表仍取自登录账号）';
+  else st.textContent = '当前：用登录账号下载。已添加借用账号「' + D.nickname + '」，可在上面切换';
+}
+async function saveDlSrc() { await run(async () => { S.settings = await api('/api/settings', {download_source: $('dlSrc').value}); renderSettings(); renderAcct(); toast('已保存'); }); }
+async function borrowImport() {
+  await run(async () => {
+    S.settings = await api('/api/borrow/import', {text: $('borrowText').value});
+    $('borrowText').value = ''; $('borrowDlg').close(); renderSettings(); renderAcct(); toast('借用账号已添加并启用');
+  });
+}
+async function borrowRemove() {
+  if (!confirm('移除借用账号？之后将用登录账号下载。')) return;
+  await run(async () => { S.settings = await api('/api/borrow/remove', {}); renderSettings(); renderAcct(); toast('已移除'); });
+}
+// 扫码添加：独立的二维码会话（与登录二维码互不干扰）
+let bKey = null, bTimer = null, bGen = 0;
+function borrowScanStop() { bGen++; clearInterval(bTimer); bTimer = null; bKey = null; if ($('borrowQrDlg').open) $('borrowQrDlg').close(); }
+async function borrowScan() {
+  const gen = ++bGen; clearInterval(bTimer); bTimer = null; bKey = null;
+  $('bqr').innerHTML = ''; $('bqrMsg').textContent = '正在生成二维码…';
+  if (!$('borrowQrDlg').open) $('borrowQrDlg').showModal();
+  try {
+    const r = await api('/api/qr/new', {purpose: 'borrow'});
+    if (gen !== bGen) return;
+    bKey = r.key; $('bqr').innerHTML = '<img alt="二维码" style="width:232px;height:232px;display:block;image-rendering:pixelated" src="data:image/png;base64,' + r.png + '">';
+    $('bqrMsg').textContent = '请用借用账号的网易云 App 扫码';
+    bTimer = setInterval(async () => {
+      if (!bKey || document.hidden) return;
+      const g = bGen, k = bKey;
+      try {
+        const c = await api('/api/qr/check?key=' + encodeURIComponent(k));
+        if (g !== bGen) return;
+        if (c.code === 803) { borrowScanStop(); await loadState(true); toast('借用账号已添加并启用'); }
+        else if (c.code === 802) $('bqrMsg').textContent = '已扫码，请在手机上确认';
+        else if (c.code === 800) { $('bqrMsg').textContent = '二维码已过期，正在刷新…'; borrowScan(); }
+        else if (c.code === 500) { $('bqrMsg').textContent = c.message; clearInterval(bTimer); bTimer = null; }
+      } catch (e) { if (g === bGen) $('bqrMsg').textContent = e.message; }
+    }, 2000);
+  } catch (e) { if (gen === bGen) $('bqrMsg').textContent = e.message; }
+}
+$('borrowQrDlg').addEventListener('close', () => { bGen++; clearInterval(bTimer); bTimer = null; bKey = null; });
+
+function renderSettings() {
+  const s = S.settings; if (!s || !s.library) return;
+  const active = document.activeElement;
+  if (active && ['INPUT', 'SELECT'].includes(active.tagName) && $('cSet').contains(active)) return;  // 用户正在输入时不覆盖
+  $('bark').value = s.bark_api || '';
+  $('barkHint').textContent = s.from_config.bark ? '当前沿用 config.yaml 中的 BARK_API；在此保存后以页面设置为准。' : (s.bark_api ? '' : '未设置，不会推送通知。');
+  const q = $('qSel');
+  q.innerHTML = '<option value="">默认（' + esc(s.config_quality) + '）</option>' + (s.qualities || []).map(x => `<option value="${x}">${x}</option>`).join('');
+  q.value = s.quality || '';
+  q.disabled = !(S.account.logged_in && S.account.is_vip);
+  $('delay').value = s.request_delay;
+  renderDlSrc();
+  const L = s.library;
+  $('libType').value = L.type;   // 唯一的开关：「不使用」即关闭
+  $('nHost').value = L.navidrome.host; $('nUser').value = L.navidrome.user; $('nPass').value = '';
+  $('nPass').placeholder = L.navidrome.has_password ? '密码（已设置，留空不修改）' : '密码';
+  $('mHost').value = L.mysql.host; $('mPort').value = L.mysql.port; $('mUser').value = L.mysql.user;
+  $('mDb').value = L.mysql.database; $('mPass').value = '';
+  $('mPass').placeholder = L.mysql.has_password ? '密码（已设置，留空不修改）' : '密码';
+  libTypeUi();
+  const from = s.from_config.library ? '（沿用 config.yaml 中的配置，保存后以页面为准）' : '';
+  $('libState').textContent = (L.type === 'none' ? '当前：未启用，不会检查音乐库' :
+    '当前：已启用 ' + (L.type === 'navidrome' ? 'Navidrome' : 'music-tag-web') + '，下载前会先查重') + from;
+}
+function libTypeUi() {
+  const t = $('libType').value;
+  $('libNav').classList.toggle('hide', t !== 'navidrome');
+  $('libSql').classList.toggle('hide', t !== 'music-tag-web');
+  $('libTestBtn').classList.toggle('hide', t === 'none');
+  $('libHint').classList.toggle('hide', t === 'none');
+}
+function libPayload() {
+  const t = $('libType').value;
+  return {type: t,
+    navidrome: {host: $('nHost').value, user: $('nUser').value, password: $('nPass').value},
+    mysql: {host: $('mHost').value, port: $('mPort').value || 3306, user: $('mUser').value, password: $('mPass').value, database: $('mDb').value}};
+}
+$('libType').onchange = libTypeUi;
+async function saveLib() { await run(async () => { S.settings = await api('/api/settings', {library: libPayload()}); renderSettings(); toast('音乐库设置已保存'); }); }
+async function testLib() { await run(async () => { const r = await api('/api/library/test', {library: libPayload()}); toast(r.message); }); }
+async function saveDl() { await run(async () => { S.settings = await api('/api/settings', {request_delay: $('delay').value, quality: $('qSel').value || null}); renderSettings(); toast('已保存'); }); }
+async function saveBark() { await run(async () => { S.settings = await api('/api/settings', {bark_api: $('bark').value}); renderSettings(); toast('已保存'); }); }
+async function testBark() { await run(async () => { await saveBark(); const r = await api('/api/bark/test', {}); toast(r.ok ? '测试通知已发送' : '发送失败，请检查地址'); }); }
+
+/* ---------------- 自动下载（定时） ---------------- */
+const SRC_NAME = {daily: '每日推荐', today: '今日日期歌单', playlist: '歌单', album: '专辑'};
+$('sType').onchange = () => $('sIdRow').classList.toggle('hide', !['playlist', 'album'].includes($('sType').value));
+
+function renderTimes() {
+  $('sTimes').innerHTML = sTimes.map((t, i) => `<span>${t}<b onclick="sTimes.splice(${i},1);renderTimes()">×</b></span>`).join('');
+}
+function addTime() {
+  const v = $('sTime').value; if (!v) return;
+  if (!sTimes.includes(v)) sTimes.push(v);
+  sTimes.sort(); renderTimes();
+}
+function resetSched() {
+  sEditId = null; sTimes = []; renderTimes();
+  ['sName', 'sId', 'sNewDir'].forEach(i => $(i).value = '');
+  $('sType').value = 'daily'; $('sType').onchange(); $('sOn').checked = true; $('sDir').value = '';
+}
+function newSched() { resetSched(); $('schedTitle').textContent = '新建定时任务'; $('schedDlg').showModal(); }
+function editSched(id) {
+  const s = schedules.find(x => x.id === id); if (!s) return;
+  resetSched(); sEditId = id; sTimes = [...s.times]; renderTimes();
+  $('schedTitle').textContent = '编辑定时任务';
+  $('sName').value = s.name; $('sType').value = s.source.type; $('sType').onchange();
+  $('sId').value = s.source.id || ''; $('sDir').value = s.subdir; $('sOn').checked = s.enabled;
+  $('schedDlg').showModal();
+}
+async function saveSched() {
+  await run(async () => {
+    if (!sTimes.length) addTime();
+    const type = $('sType').value, src = {type};
+    if (type === 'playlist' || type === 'album') src.id = $('sId').value.trim();
+    await api('/api/schedule/save', {id: sEditId, name: $('sName').value, source: src,
+      subdir: await pickDir('sDir', 'sNewDir'), times: sTimes, enabled: $('sOn').checked});
+    toast('定时任务已保存'); $('schedDlg').close(); loadSchedules();
+  });
+}
+async function loadSchedules() {
+  await run(async () => {
+    schedules = (await api('/api/schedules')).schedules;
+    $('schedList').innerHTML = schedules.length ? schedules.map(s => `<div class="sched">
+      <div class="grow"><b>${esc(s.name)}</b> <span class="sub">${SRC_NAME[s.source.type]}${s.source.id ? ' ' + esc(s.source.id) : ''} → ${esc(hostPath(s.subdir))}</span>
+        <div class="sub">每天 ${s.times.join('、')}${s.enabled ? '' : '（已停用）'}${s.last_finished ? ' · 上次 ' + esc(s.last_finished) + '：<span class="st-' + esc(s.last_status) + '">' + esc(s.last_message) + '</span>' : ''}
+        ${s.last_job_id ? ' <a class="lnk" href="javascript:void 0" onclick="openJob(\'' + esc(s.last_job_id) + '\')">查看详情</a>' : ''}</div></div>
+      <label class="sw"><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleSched('${s.id}', this.checked)"> 启用</label>
+      <button class="ghost sm" onclick="runSched('${s.id}')">立即运行</button>
+      <button class="ghost sm" onclick="editSched('${s.id}')">编辑</button>
+      <button class="ghost sm" onclick="delSched('${s.id}')">删除</button></div>`).join('') : '暂无定时任务';
+  });
+}
+const toggleSched = (id, on) => run(async () => {
+  const s = schedules.find(x => x.id === id); if (!s) return;
+  await api('/api/schedule/save', {id, name: s.name, source: s.source, subdir: s.subdir, times: s.times, enabled: on});
+  toast(on ? '已启用' : '已停用'); loadSchedules();
+});
+const runSched = id => run(async () => { await api('/api/schedule/run', {id}); toast('已加入队列'); showTab('jobs'); pollJobs(); });
+const delSched = id => confirm('删除该定时任务？') && run(async () => { await api('/api/schedule/delete', {id}); loadSchedules(); });
+
+/* ---------------- 任务记录 ---------------- */
+const ST = {queued: '排队中', running: '进行中', done: '完成', failed: '失败', cancelled: '已取消'};
+// 失败原因分类（与 downloader.DownloadException.kind 对应）
+const KIND = {no_copyright: '无版权/已下架', vip_only: 'VIP 专享', need_purchase: '需单独购买', no_url: '无下载链接',
+  api: '接口错误', download: '下载失败', other: '其它'};
+// 单首状态：标签 + 样式
+const IST = {success: ['成功', 'ok'], failed: ['失败', 'bad'], skipped: ['跳过', 'warn'], library: ['库中已有', ''], local: ['本地已有', '']};
+const PAGE = 30;
+let jTrig = '', jOffset = 0, jOpen = {}, jDetail = {}, jFilter = {}, jLoaded = [];
+
+const songUrl = id => 'https://music.163.com/#/song?id=' + encodeURIComponent(id);
+
+function countTags(c) {
+  const t = [];
+  if (c.success) t.push(`<span class="tag ok">成功 ${c.success}</span>`);
+  if (c.failed) t.push(`<span class="tag bad">失败 ${c.failed}</span>`);
+  if (c.skipped) t.push(`<span class="tag warn">跳过 ${c.skipped}</span>`);
+  if (c.library) t.push(`<span class="tag">库中已有 ${c.library}</span>`);
+  if (c.local) t.push(`<span class="tag">本地已有 ${c.local}</span>`);
+  return t.join('');
+}
+function kindTags(k) {
+  return Object.entries(k || {}).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<span class="tag bad">${esc(KIND[n] || n)} ${v}</span>`).join('');
+}
+function jobHead(j) {
+  const pct = j.total ? Math.round(j.processed * 100 / j.total) : (j.status === 'done' ? 100 : 0);
+  const active = j.status === 'queued' || j.status === 'running';
+  const trig = j.trigger === 'schedule' ? '定时' : '手动';
+  return `<div class="jh" onclick="toggleJob('${j.id}')"><div class="jl1"><b>${esc(j.title)}</b>
+      <span class="st-${j.status}">${ST[j.status]}</span><span class="sub">${esc(j.created)} · ${trig} · ${esc(hostPath(j.subdir))}</span>
+      ${active ? `<button class="ghost sm" style="margin-left:auto" onclick="event.stopPropagation();cancelJob('${j.id}')">取消</button>` : ''}</div>
+    ${active ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="sub">${j.processed}/${j.total} ${esc(j.current)}</div>` : ''}
+    <div class="jl2">${countTags(j.counts)}
+      ${j.status === 'failed' || (j.status === 'cancelled' && !j.total) ? `<span class="why">${esc(j.message)}</span>` : ''}</div></div>`;
+}
+function itemRow(t) {
+  const [lab, cls] = IST[t.status] || [t.status, ''];
+  const who = (t.artists || []).join(' & ');
+  return `<div class="it"><span class="tag ${cls}">${lab}</span>
+    <div><div class="nm">${esc(who)}${who ? ' - ' : ''}${esc(t.name)} <span class="sub">${esc(t.album || '')}</span></div>
+      ${t.status === 'failed' ? `<div class="why">${esc(KIND[t.kind] || '失败')}：${esc(t.reason)}</div>`
+        : (t.status === 'skipped' ? `<div class="sub">${esc(t.reason)}</div>` : '')}</div>
+    ${t.id ? `<a class="lnk" href="${songUrl(t.id)}" target="_blank" rel="noopener noreferrer">去网易云查看 ↗</a>` : ''}</div>`;
+}
+function jobBody(j) {
+  const d = jDetail[j.id], f = jFilter[j.id] || (j.counts.failed ? 'failed' : 'all');
+  if (!d) return '<div class="jd sub">加载中…</div>';
+  const items = d.items;
+  const shown = items == null ? [] : (f === 'all' ? items : items.filter(t => t.status === f));
+  const seg = [['failed', '失败'], ['skipped', '跳过'], ['success', '成功'], ['all', '全部']].map(([v, n]) => {
+    const c = items == null ? 0 : (v === 'all' ? items.length : items.filter(t => t.status === v).length);
+    return `<button data-v="${v}" class="${f === v ? 'on' : ''}" onclick="setFilter('${j.id}','${v}')">${n} ${c}</button>`;
+  }).join('');
+  return `<div class="jd">
+    ${j.message ? `<div class="sub">${esc(j.message)}</div>` : ''}
+    ${Object.keys(j.fail_kinds || {}).length ? `<div style="margin-top:6px"><span class="sub">失败原因：</span>${kindTags(j.fail_kinds)}</div>` : ''}
+    ${items == null ? ((d.log || []).length ? `<div class="sub" style="margin-top:6px">该任务没有逐首明细（旧版本产生，或明细文件已被清理），仅有日志：</div><pre class="log">${esc((d.log || []).join('\n'))}</pre>` : '<div class="sub" style="margin-top:6px">该任务没有逐首明细（旧版本产生，或明细文件已被清理）。</div>') : `<div class="seg auto" style="margin-top:8px">${seg}</div>
+      <div class="tbl">${shown.length ? shown.map(itemRow).join('') : '<div class="sub" style="padding:10px">没有符合条件的歌曲</div>'}</div>
+      <details style="margin-top:8px"><summary class="sub" style="cursor:pointer">运行日志</summary><pre class="log">${esc((d.log || []).join('\n'))}</pre></details>`}
+  </div>`;
+}
+function renderJob(j) {
+  return `<div class="job" id="job-${j.id}">${jobHead(j)}${jOpen[j.id] ? jobBody(j) : ''}</div>`;
+}
+
+async function loadJobs(reset, more) {
+  if (more) jOffset += PAGE; else if (reset) jOffset = 0;
+  const qs = `?limit=${jOffset + PAGE}&offset=0&trigger=${jTrig}&failed=${$('jFailed').checked ? 1 : 0}`;
+  let r; try { r = await api('/api/jobs' + qs); } catch (e) { return false; }
+  // 为简单可靠：每次都从头取到当前页数，整体重绘（任务数不大，1000 条上限）
+  jLoaded = r.jobs;
+  $('jobsTotal').textContent = r.total ? `共 ${r.total} 条` : '';
+  $('jobs').className = '';
+  $('jobs').innerHTML = r.jobs.length ? r.jobs.map(renderJob).join('') : '<div class="sub">暂无任务</div>';
+  $('jMore').classList.toggle('hide', r.jobs.length >= r.total);
+  // 已展开且仍在运行的任务，实时刷新明细
+  r.jobs.filter(j => jOpen[j.id] && (j.status === 'queued' || j.status === 'running')).forEach(j => fetchDetail(j.id));
+  renderNavBadge(r);
+  return r.active;
+}
+
+// Tab 角标：运行中的任务数；最新一次已结束任务有失败时显示红点
+async function refreshNav() {
+  let r; try { r = await api('/api/jobs?limit=1'); } catch (e) { return; }
+  renderNavBadge(r);
+}
+let navSeen = localStorage.getItem('seenJob') || '';
+function renderNavBadge(r) {
+  const running = r.active ? '<span class="n">进行中</span>' : '';
+  const dot = !r.active && r.latest && r.latest.failed && r.latest.id !== navSeen && tab !== 'jobs' ? '<span class="dot"></span>' : '';
+  $('navJobs').innerHTML = running || dot;
+  if (tab === 'jobs' && r.latest) { navSeen = r.latest.id; localStorage.setItem('seenJob', navSeen); }
+}
+
+async function fetchDetail(id) {
+  try { jDetail[id] = await api('/api/job?id=' + encodeURIComponent(id)); } catch (e) { jDetail[id] = {items: [], log: [e.message]}; }
+  const j = jLoaded.find(x => x.id === id) || jDetail[id];
+  const el = $('job-' + id);
+  if (el && jOpen[id]) {
+    const tbl = el.querySelector('.tbl'), top = tbl ? tbl.scrollTop : 0;
+    el.outerHTML = renderJob({...j, ...jDetail[id]});
+    const nt = $('job-' + id) && $('job-' + id).querySelector('.tbl'); if (nt) nt.scrollTop = top;
+  }
+}
+function toggleJob(id) {
+  jOpen[id] = !jOpen[id];
+  const j = jLoaded.find(x => x.id === id); if (!j) return;
+  if (jOpen[id] && !jDetail[id]) { $('job-' + id).outerHTML = renderJob(j); fetchDetail(id); return; }
+  $('job-' + id).outerHTML = renderJob({...j, ...(jDetail[id] || {})});
+}
+function setFilter(id, v) {
+  jFilter[id] = v;
+  const j = jLoaded.find(x => x.id === id) || {};
+  $('job-' + id).outerHTML = renderJob({...j, ...jDetail[id]});
+}
+// 从「自动下载」里点「查看详情」：切到任务记录并展开该次运行
+async function openJob(id) {
+  jOpen[id] = true; jFilter[id] = jFilter[id] || 'failed';
+  showTab('jobs');
+  await loadJobs(true);
+  if (!jLoaded.find(x => x.id === id)) { toast('该次运行记录已被清理'); return; }
+  const el = $('job-' + id); if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
+let jKind = 'all';
+function syncKind() {
+  document.querySelectorAll('#jKind button').forEach(x => x.classList.toggle('on', x.dataset.v === jKind));
+  $('jobsSec').classList.toggle('hide', jKind === 'lb'); $('runsSec').classList.toggle('hide', jKind === 'dl');
+  $('jobsHd').classList.toggle('hide', jKind !== 'all'); $('runsHd').classList.toggle('hide', jKind !== 'all');
+}
+function refreshJobsTab() { syncKind(); if (jKind !== 'lb') loadJobs(true); if (jKind !== 'dl') runsLoad(); }
+document.querySelectorAll('#jKind button').forEach(b => b.onclick = () => { jKind = b.dataset.v; refreshJobsTab(); });
+document.querySelectorAll('#jTrig button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#jTrig button').forEach(x => x.classList.toggle('on', x === b));
+  jTrig = b.dataset.v; refreshJobsTab();
+});
+$('jFailed').onchange = refreshJobsTab;
+
+const cancelJob = id => run(async () => { await api('/api/job/cancel', {id}); loadJobs(); });
+function pollJobs() {
+  if (jobsTimer) return;
+  jobsTimer = setInterval(async () => {
+    if (document.hidden) return;
+    let active;
+    if (tab === 'jobs') active = await loadJobs(); else { const r = await api('/api/jobs?limit=1').catch(() => null); active = r && r.active; if (r) renderNavBadge(r); }
+    if (!active) { clearInterval(jobsTimer); jobsTimer = null; loadSchedules(); refreshNav(); }
+  }, 1500);
+}
+
+/* ---------------- 初始化 ---------------- */
+async function initData() { await Promise.all([loadDirs(), loadSchedules(), refreshNav()]); showTab(location.hash.slice(1) || 'dl', false); }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadState(); if (tab === 'jobs') loadJobs(); else refreshNav(); } });
+(async () => { await loadState(); if (S.account.logged_in && !S.account.invalid) await initData(); })();
+</script>
+</body>
+</html>

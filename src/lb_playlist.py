@@ -1,0 +1,49 @@
+"""把一个推荐批次发布成 Navidrome 歌单（按歌曲 id 建，不依赖磁盘路径）。
+
+名称带日期（如「LB Weekly Jams 2026-09-14」），保留历史；同一批次重复发布时先删掉我们自己建的旧歌单再重建，
+绝不碰不是我们创建的歌单。
+"""
+
+import logging
+from datetime import datetime
+from typing import Callable, List, Optional
+
+import lb_repo
+import lb_states as ST
+from lb_settings import REC_LABELS
+from nd_client import NavidromeError
+
+logger = logging.getLogger(__name__)
+
+
+def playlist_name(rec_type: str, lb_date: str) -> str:
+    return f"LB {REC_LABELS.get(rec_type, rec_type)} {(lb_date or '')[:10]}".strip()
+
+
+def publish_batch(db, nd, batch_id: int, log: Callable[..., None], now: Optional[datetime] = None) -> Optional[str]:
+    """返回新歌单的 Navidrome id；没有可放的歌或失败返回 None（失败只记日志，不影响任务）。"""
+    with db.lock:
+        batch = db.conn.execute("SELECT * FROM recommendation_batches WHERE id=?", (batch_id,)).fetchone()
+    items = lb_repo.items_of_batch(db, batch_id)
+    song_ids: List[str] = [i["local_file_id"] for i in items if i["state"] in ST.PLAYABLE and i["local_file_id"]]
+    name = playlist_name(batch["type"], batch["lb_date"])
+
+    # 先删我们自己建过的旧版本（重跑/补全后重建）
+    for row in lb_repo.live_playlists_of_batch(db, batch_id):
+        try:
+            nd.delete_playlist(row["nd_playlist_id"])
+        except NavidromeError as e:
+            log(f"删除旧歌单失败（可能已被手动删除）：{e}", "WARNING")
+        lb_repo.mark_playlist_deleted(db, row["id"], now)
+
+    if not song_ids:
+        log(f"歌单 {name}：没有可放入的歌曲，不创建")
+        return None
+    try:
+        pid = nd.create_playlist(name, song_ids)
+    except NavidromeError as e:
+        log(f"创建歌单失败：{name} — {e}", "ERROR")
+        return None
+    lb_repo.record_playlist(db, batch_id, name, pid, len(song_ids), now)
+    log(f"歌单已创建：{name}（{len(song_ids)} 首）")
+    return pid

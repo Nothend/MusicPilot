@@ -14,8 +14,16 @@ from tagger import write_tags
 
 
 class DownloadException(Exception):
-    """下载异常类"""
-    pass
+    """下载异常类
+
+    kind 是失败原因的粗分类，供 Web 控制台在任务记录里归类展示（cron 批处理可忽略）：
+    no_copyright 无版权/已下架 | vip_only VIP 专享 | need_purchase 需单独购买 |
+    no_url 无下载链接（其它原因） | api 接口错误 | download 下载失败 | other 其它
+    """
+
+    def __init__(self, message: str = "", kind: str = "other"):
+        super().__init__(message)
+        self.kind = kind
 
 class SongDownloader:
     def __init__(self, cookies: Dict[str, str], netease_api: "NeteaseMusic" = None):
@@ -23,6 +31,8 @@ class SongDownloader:
         self.download_dir = self._get_download_dir()
         self._init_download_dir()
         self.parsedCookies=cookies
+        # 最近一次 get_music_info 返回 None（跳过）的原因，供 Web 任务记录展示
+        self.last_skip_reason = ""
         # 复用外部传入的 NeteaseMusic 实例；未传入时再自行创建
         self.NeteaseApi = netease_api or NeteaseMusic(self.parsedCookies)
         
@@ -106,12 +116,33 @@ class SongDownloader:
         stem = self._target_stem(music_info.name, music_info.artists)
         return self.download_dir / f"{stem}.{music_info.file_type}"
 
-    def get_music_info(self, music_id: int, quality: str = "standard") -> Optional[MusicInfo]:
+    @staticmethod
+    def _explain_no_url(song_data: Dict) -> tuple:
+        """接口没给下载链接时，按返回的 code/fee 给出 (分类, 可读原因)，并附上原始字段便于排查。
+
+        code=404 通常是无版权/已下架；fee=1 VIP 专享；fee=4 付费专辑；fee=8 高音质需会员。
+        """
+        code, fee = song_data.get('code'), song_data.get('fee')
+        raw = f"code={code} fee={fee} payed={song_data.get('payed')}"
+        if code == 404:
+            return 'no_copyright', f"无版权或已下架（{raw}）"
+        if fee == 4:
+            return 'need_purchase', f"付费专辑，需单独购买（{raw}）"
+        if fee == 1:
+            return 'vip_only', f"VIP 专享，当前账号无权下载（{raw}）"
+        if fee == 8:
+            return 'vip_only', f"该音质需会员（{raw}）"
+        return 'no_url', f"接口未返回下载链接（{raw}）"
+
+    def get_music_info(self, music_id: int, quality: str = "standard",
+                       allow_mp3: bool = False) -> Optional[MusicInfo]:
         """获取音乐详细信息
 
         Args:
             music_id: 音乐ID
             quality: 音质等级
+            allow_mp3: 是否接受 MP3（Web 控制台用：非 VIP 账号只能下 MP3）。默认 False，
+                保持 cron 批处理"MP3 主动跳过"的原行为；开启后还会跳过仅 30 秒试听的片段。
 
         Returns:
             音乐信息对象；若该歌曲只有 MP3 格式（库标准为无损，主动跳过）则返回 None
@@ -119,33 +150,43 @@ class SongDownloader:
         Raises:
             DownloadException: 获取信息失败时抛出
         """
+        self.last_skip_reason = ""
         try:
 
             # 获取音乐URL信息
             url_result = self.NeteaseApi.get_song_url(music_id, quality, self.parsedCookies)
             if not url_result.get('data') or not url_result['data']:
-                raise DownloadException(f"无法获取音乐ID {music_id} 的播放链接")
+                raise DownloadException(f"无法获取音乐ID {music_id} 的播放链接", kind="api")
 
             song_data = url_result['data'][0]
             download_url = song_data.get('url', '')
             if not download_url:
-                raise DownloadException(f"音乐ID {music_id} 无可用的下载链接")
+                kind, why = self._explain_no_url(song_data)
+                raise DownloadException(f"音乐ID {music_id} 无可用的下载链接：{why}", kind=kind)
+
+            # 非 VIP 取到 VIP 专享歌曲时，接口返回的是试听片段（带 freeTrialInfo），不是整曲
+            if allow_mp3 and song_data.get('freeTrialInfo'):
+                self.logger.info(f"音乐ID {music_id} 仅有试听片段（需要 VIP），跳过该歌曲")
+                self.last_skip_reason = "仅有试听片段（VIP 专享）"
+                return None
 
             # 先判定格式：MP3 直接短路返回，省去后续 detail/album/lyric 三次请求
             file_type = song_data.get('type', 'mp3').lower()
-            if file_type == 'mp3':
+            if file_type == 'mp3' and not allow_mp3:
                 self.logger.info(f"音乐ID {music_id} 获取到 MP3 格式，跳过该歌曲（省去后续请求）")
+                self.last_skip_reason = "仅 MP3 格式（已按无损标准跳过）"
                 return None
             # 只处理 tagger 能写标签的白名单格式（flac/m4a）；其它未知格式一并跳过，
             # 避免下载回来因无对应写标签器而报错，也顺带省去后续三次请求。
             if file_type not in self.supported_formats:
                 self.logger.warning(f"音乐ID {music_id} 为不支持的格式 {file_type}，跳过该歌曲")
+                self.last_skip_reason = f"不支持的格式 {file_type}"
                 return None
 
             # 获取音乐详情
             detail_result = self.NeteaseApi.get_song_detail(music_id, self.parsedCookies)
             if not detail_result.get('songs') or not detail_result['songs']:
-                raise DownloadException(f"无法获取音乐ID {music_id} 的详细信息")
+                raise DownloadException(f"无法获取音乐ID {music_id} 的详细信息", kind="api")
 
             song_detail = detail_result['songs'][0]
 
@@ -189,8 +230,10 @@ class SongDownloader:
             
             return music_info
             
+        except DownloadException:
+            raise  # 上面已带分类和原因，不再被下面的 Exception 重复包装
         except APIException as e:
-            raise DownloadException(f"API调用失败: {e}")
+            raise DownloadException(f"API调用失败: {e}", kind="api")
         except Exception as e:
             raise DownloadException(f"获取音乐信息时发生错误: {e}")
   
