@@ -74,6 +74,38 @@ def test_read_endpoints_work_on_an_empty_database(api):
     assert api.get("/api/lb/love/preview").json() == {"preview": None}
 
 
+# ---------------------------------------------------------------- 红心：未解析的歌人工处理
+MB = "11111111-2222-3333-4444-555555555555"
+
+
+def test_unresolved_love_songs_can_be_resolved_and_undone_over_http(api):
+    assert api.get("/api/lb/love/unresolved").json() == {"at": None, "items": [], "manual": []}
+    api.app.kv.set("lb.love_unresolved", {"at": "2026-11-22T10:00:00",
+                                          "items": [{"id": "s1", "artist": "甲", "title": "歌", "reason": "no_result", "cand": ""}]})
+    v = api.get("/api/lb/love/unresolved").json()
+    assert v["items"][0]["reason_zh"] and v["items"][0]["id"] == "s1"
+    assert api.post("/api/lb/love/resolve", {"id": "s1", "mbid": "bad"}).status_code == 400
+    assert api.post("/api/lb/love/resolve", {"id": "nope", "mbid": MB}).status_code == 400
+    assert api.post("/api/lb/love/resolve", {"id": "s1", "mbid": MB}).json() == {"ok": True, "remaining": 0}
+    v = api.get("/api/lb/love/unresolved").json()
+    assert v["items"] == [] and v["manual"][0]["mbid"] == MB
+    m = v["manual"][0]
+    assert api.post("/api/lb/love/undo", {"na": m["norm_artist"], "nt": m["norm_title"]}).json() == {"ok": True}
+    assert api.post("/api/lb/love/undo", {"na": "x", "nt": "y"}).status_code == 400
+
+
+def test_mb_search_is_proxied_and_errors_are_400(api, monkeypatch):
+    import mb_client
+    monkeypatch.setattr(mb_client, "search_recordings", lambda a, t: [{"mbid": MB, "title": t, "artist": a}])
+    assert api.get("/api/lb/love/mb_search?artist=甲&title=歌").json()["results"][0]["mbid"] == MB
+
+    def boom(a, t):
+        raise mb_client.MBError("MusicBrainz 限流中，请稍后再试")
+    monkeypatch.setattr(mb_client, "search_recordings", boom)
+    r = api.get("/api/lb/love/mb_search?artist=甲&title=歌")
+    assert r.status_code == 400 and "限流" in r.json()["error"]
+
+
 def test_bad_parameters_are_400_not_500(api):
     assert api.get("/api/lb/items").status_code == 400
     assert api.get("/api/lb/items?batch=x").status_code == 400
@@ -176,8 +208,11 @@ def test_basic_auth_protects_every_new_endpoint(tmp_path, monkeypatch):
     a = Api(tmp_path, monkeypatch)
     monkeypatch.setenv("WEB_PASSWORD", "secret")
     try:
-        for path in ("/api/lb/dashboard", "/api/lb/runs", "/api/lb/items?batch=1", "/api/lb/cleanup/preview", "/api/lb/love/preview"):
+        for path in ("/api/lb/dashboard", "/api/lb/runs", "/api/lb/items?batch=1", "/api/lb/cleanup/preview", "/api/lb/love/preview",
+                     "/api/lb/love/unresolved", "/api/lb/love/mb_search?title=x"):
             assert a.get(path).status_code == 401
+        for path in ("/api/lb/love/resolve", "/api/lb/love/undo"):
+            assert requests.post(a.base + path, json={}, timeout=10).status_code == 401
         assert requests.post(a.base + "/api/lb/action", json={"kind": "sync"}, timeout=10).status_code == 401
         assert requests.get(a.base + "/api/lb/dashboard", auth=("admin", "secret"), timeout=10).status_code == 200
         assert a.app.tm.recent_runs() == []

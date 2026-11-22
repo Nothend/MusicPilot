@@ -14,7 +14,6 @@ from typing import List, Optional
 import pymysql
 from pymysql.cursors import DictCursor
 
-from config import Config
 from http_client import SESSION
 
 logger = logging.getLogger(__name__)
@@ -37,12 +36,12 @@ class NavidromeChecker(LibraryChecker):
     只回答"这首歌是否已在库中"（非 MP3 才算存在；MP3 视为缺失，以便下载无损版本）。
     """
 
-    def __init__(self, config: Config):
+    def __init__(self, host: Optional[str], user: str, password: str):
         self.logger = logging.getLogger(__name__)
-        self.username = config.get_nested("NAVIDROME.NAVIDROME_USER") or ""
-        self.password = config.get_nested("NAVIDROME.NAVIDROME_PASS") or ""
+        self.username = user or ""
+        self.password = password or ""
         # 建址只做一次，避免每次查询都重复清洗
-        self.base_url = self._build_base_url(config.get_nested("NAVIDROME.NAVIDROME_HOST"))
+        self.base_url = self._build_base_url(host)
 
     @staticmethod
     def _build_base_url(host: Optional[str]) -> str:
@@ -155,10 +154,10 @@ class MusicTagWebChecker(LibraryChecker):
 
     REQUIRED_KEYS = ["host", "port", "user", "password", "database"]
 
-    def __init__(self, config: Config):
+    def __init__(self, node: dict):
         self.logger = logging.getLogger(__name__)
 
-        node = config.get("music-tag-web", {}) or {}
+        node = node or {}
         missing_keys = [k for k in self.REQUIRED_KEYS if k not in node]
         if missing_keys:
             self.logger.error(f"MySQL配置缺少必要项: {missing_keys}")
@@ -246,13 +245,15 @@ class MusicTagWebChecker(LibraryChecker):
             return False
 
 
-def make_library_checker(config: Config) -> Optional[LibraryChecker]:
-    """根据配置启用情况返回对应的库检查器；都未启用返回 None。"""
-    if config.is_enabled("NAVIDROME"):
+def make_library_checker(lib: Optional[dict]) -> Optional[LibraryChecker]:
+    """按页面的音乐库设置（{type, navidrome:{host,user,password}, mysql:{...}}）返回检查器；类型为 none 返回 None。"""
+    ltype = (lib or {}).get("type", "none")
+    if ltype == "navidrome":
+        n = lib["navidrome"]
         logger.info("启用 Navidrome 库检查，筛选不在库中的歌曲")
-        return NavidromeChecker(config)
-    if config.is_enabled("MUSIC-TAG-WEB"):
+        return NavidromeChecker(n.get("host"), n.get("user"), n.get("password"))
+    if ltype == "music-tag-web":
         logger.info("启用 music-tag-web(MySQL) 库检查，筛选不在库中的歌曲")
-        return MusicTagWebChecker(config)
+        return MusicTagWebChecker(lib["mysql"])
     logger.info("未启用任何库检查，仅检查本地是否已下载")
     return None

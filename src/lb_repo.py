@@ -265,12 +265,43 @@ def cache_get_mbid(db: Database, norm_artist: str, norm_title: str) -> Optional[
 
 
 def cache_put_mbid(db: Database, norm_artist: str, norm_title: str, mbid: str, found: bool,
-                   now: Optional[datetime] = None) -> None:
+                   now: Optional[datetime] = None, *, reason: str = "", cand: str = "") -> None:
+    """写自动查询结果。绝不覆盖用户手动处理过的行（manual 行永远优先）。"""
     with db.transaction() as conn:
         conn.execute(
-            "INSERT INTO mbid_cache(norm_artist, norm_title, mbid, found, looked_up_at) VALUES(?,?,?,?,?) "
+            "INSERT INTO mbid_cache(norm_artist, norm_title, mbid, found, looked_up_at, reason, cand) VALUES(?,?,?,?,?,?,?) "
             "ON CONFLICT(norm_artist, norm_title) DO UPDATE SET mbid=excluded.mbid, found=excluded.found, "
-            "looked_up_at=excluded.looked_up_at", (norm_artist, norm_title, mbid, 1 if found else 0, now_iso(now)))
+            "looked_up_at=excluded.looked_up_at, reason=excluded.reason, cand=excluded.cand WHERE mbid_cache.manual=0 "
+            "AND mbid_cache.ignored=0", (norm_artist, norm_title, mbid, 1 if found else 0, now_iso(now), reason, cand))
+
+
+def cache_set_manual(db: Database, norm_artist: str, norm_title: str, *, artist: str, title: str, mbid: str = "",
+                     ignored: bool = False, now: Optional[datetime] = None) -> None:
+    """用户手动指定 MBID（或标记忽略）。mbid 与 ignored 二选一。"""
+    if bool(mbid) == bool(ignored):
+        raise ValueError("手动处理必须二选一：指定 MBID，或标记忽略")
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO mbid_cache(norm_artist, norm_title, mbid, found, looked_up_at, manual, ignored, artist, title) "
+            "VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(norm_artist, norm_title) DO UPDATE SET mbid=excluded.mbid, "
+            "found=excluded.found, looked_up_at=excluded.looked_up_at, manual=excluded.manual, ignored=excluded.ignored, "
+            "artist=excluded.artist, title=excluded.title, reason='', cand=''",
+            (norm_artist, norm_title, mbid, 1 if mbid else 0, now_iso(now), 1 if mbid else 0, 1 if ignored else 0, artist, title))
+
+
+def cache_clear_manual(db: Database, norm_artist: str, norm_title: str) -> bool:
+    """撤销手动处理：删除该行，下次同步会重新自动解析。返回是否真的删了。"""
+    with db.transaction() as conn:
+        cur = conn.execute("DELETE FROM mbid_cache WHERE norm_artist=? AND norm_title=? AND (manual=1 OR ignored=1)",
+                           (norm_artist, norm_title))
+        return cur.rowcount > 0
+
+
+def cache_manual_rows(db: Database) -> List[Dict[str, Any]]:
+    with db.lock:
+        rows = db.conn.execute("SELECT norm_artist, norm_title, mbid, ignored, artist, title, looked_up_at FROM mbid_cache "
+                               "WHERE manual=1 OR ignored=1 ORDER BY looked_up_at DESC").fetchall()
+    return [dict(r) for r in rows]
 
 
 def love_records(db: Database) -> Dict[str, str]:

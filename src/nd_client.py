@@ -17,7 +17,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 API_VERSION = "1.16.1"
-CLIENT_NAME = "musicpilot"
+CLIENT_NAME = "MusicPilot"
 
 
 class NavidromeError(Exception):

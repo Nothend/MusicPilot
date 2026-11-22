@@ -16,7 +16,7 @@ from tagger import write_tags
 class DownloadException(Exception):
     """下载异常类
 
-    kind 是失败原因的粗分类，供 Web 控制台在任务记录里归类展示（cron 批处理可忽略）：
+    kind 是失败原因的粗分类，供 Web 控制台在任务记录里归类展示：
     no_copyright 无版权/已下架 | vip_only VIP 专享 | need_purchase 需单独购买 |
     no_url 无下载链接（其它原因） | api 接口错误 | download 下载失败 | other 其它
     """
@@ -142,7 +142,7 @@ class SongDownloader:
             music_id: 音乐ID
             quality: 音质等级
             allow_mp3: 是否接受 MP3（Web 控制台用：非 VIP 账号只能下 MP3）。默认 False，
-                保持 cron 批处理"MP3 主动跳过"的原行为；开启后还会跳过仅 30 秒试听的片段。
+                默认「MP3 主动跳过」（推荐联动只要无损）；开启后还会跳过仅 30 秒试听的片段。
 
         Returns:
             音乐信息对象；若该歌曲只有 MP3 格式（库标准为无损，主动跳过）则返回 None

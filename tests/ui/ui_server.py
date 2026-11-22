@@ -8,11 +8,8 @@ os.environ.pop('WEB_PASSWORD', None)
 from pathlib import Path
 import socket, tempfile
 
-# ---- 隔离（重要）：这个脚本绝不能读到真实的 config.yaml（里面有真实的 Bark 地址等），也不能访问外网。
-# 曾经因为没隔离，跑一次就给用户手机推送一堆 Bark 通知。
-_cfg = Path(tempfile.mkdtemp()) / 'config.yaml'
-_cfg.write_text('{}\n', encoding='utf-8')
-os.environ['CONFIG_PATH'] = str(_cfg)                 # 必须是真实存在的文件，否则 Config 会改去 cwd 找同名文件
+# ---- 隔离（重要）：数据目录是临时目录、不访问外网、通知置空。
+# 曾经因为没隔离（读到真实 config.yaml 里的 Bark 地址），跑一次就给用户手机推送一堆 Bark 通知。
 _real_getaddrinfo = socket.getaddrinfo
 def _guard(host, *a, **k):
     if host not in (None, 'localhost', '127.0.0.1', '::1'):
@@ -36,7 +33,9 @@ class UiLB(FakeLB):
 class UiND(FakeND):
     """带一首「已标红心」的歌，让红心预览有内容可看。"""
     def starred_songs(self, folder_id=None):
-        return [{"id": "star1", "title": "红心歌", "artist": "歌手甲", "album": "", "mbid": "abcdef01-1111-1111-1111-111111111111",
+        return [{"id": "star2", "title": "野生歌", "artist": "歌手乙", "album": "", "mbid": "",
+                 "starred": True, "duration": 200, "size": 1, "suffix": "flac", "album_artist": "歌手乙", "path_api": ""},
+                {"id": "star1", "title": "红心歌", "artist": "歌手甲", "album": "", "mbid": "abcdef01-1111-1111-1111-111111111111",
                  "starred": True, "duration": 200, "size": 1, "suffix": "flac", "album_artist": "歌手甲", "path_api": ""}]
 
 

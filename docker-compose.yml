@@ -6,7 +6,6 @@ services:
     volumes:
       - ./downloads:/app/downloads           # 下载目录映射（主机目录可自定义）
       - ./data:/app/data                     # 数据目录：database.sqlite（凭证/设置/推荐记录，含登录 cookie，权限 600）、日志（logs/）
-                                             # 旧版 config.yaml 如需沿用，放进 ./data/config.yaml 即可（可选）
       # ---- 推荐联动（ListenBrainz，可选）：容器内只用下面这两个路径，页面里也只填这两个容器路径 ----
       # 主库：只有「红心转正」会往里新增文件（绝不覆盖/删除）；不用自动转正可以只读挂载（加 :ro）。
       # - /你的/音乐/主库目录:/music/songs
@@ -16,9 +15,5 @@ services:
       - "5119:5119"                          # Web 控制台端口
     environment:
       - TZ=Asia/Shanghai                     # 时区（日期命名的歌单匹配依赖本地时区）
-      - CRON_ENABLE=false                    # 关闭 cron 批处理，只用 Web 控制台（改回 true 或删除此行即恢复 cron）
-      - CRON_SCHEDULE=0 20-23,0 * * *        # 执行 main.py：每天 20-23 点及 0 点，每小时一次（CRON_ENABLE=true 时生效）
-      # - RUN_ON_START=true                  # 可选：容器启动即先同步一次（默认 false）
-      - WEB_ENABLE=true                      # 启用 Web 控制台（扫码登录、每日推荐、定时下载）
       - WEB_PORT=5119                        # Web 端口（需与上面 ports 的容器端口一致）
       - WEB_PASSWORD=change-me                    # 页面 Basic 认证密码（用户名 WEB_USER，默认 admin）

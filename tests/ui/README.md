@@ -14,5 +14,5 @@ cd /tmp/jsd && cp <仓库目录>/tests/ui/ui_test.js . && node ui_test.js <端�
 
 ## 隔离（重要）
 
-`ui_server.py` 已隔离：临时空配置（不读真实 `config.yaml`）、禁止访问外网、通知置空、假 LB 的 `love` 一旦被调用即报错。
+`ui_server.py` 已隔离：临时数据目录、禁止访问外网、通知置空、假 LB 的 `love` 一旦被调用即报错。
 新增类似脚本时务必同样处理——曾因没有隔离，跑一次就给用户手机推送了一堆真实的 Bark 通知。

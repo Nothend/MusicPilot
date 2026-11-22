@@ -10,7 +10,7 @@
 - 历史任务逐条存 job_history 表，保存时只写有变化的行（原先每次整体重写 JSON 文件）。
 
 旧版状态文件 web_state.json 会在首次启动时一次性导入，成功后改名为 web_state.json.bak。
-config.yaml 是只读挂载、面向 cron 批处理；Web 端需要可写状态，因此另用独立的数据目录。
+所有设置都在 Web 页面里完成，状态放在独立的可写数据目录里。
 """
 
 import copy
@@ -47,13 +47,13 @@ def _default_state() -> Dict[str, Any]:
         "account": None,  # {cookies, uid, nickname, avatar, vip_type}
         # 借用账号：仅用于下载（取下载链接/详情/歌词）。结构同 account；必须是黑胶 VIP。权限同 account（库文件 600）
         "download_account": None,
-        # 所有设置项为 None 表示"沿用 config.yaml（若存在）或内置默认值"，页面保存后即以页面为准
+        # 所有设置项为 None 表示"用内置默认值"，页面保存后即以页面为准
         "settings": {
             "bark_api": None,        # 字符串（含空串=关闭）
             "use_library": True,     # 总开关；音乐库类型选"不使用"等价于关闭
             "quality": None,         # VIP 账号的下载音质
             "request_delay": None,   # 每首歌之间的间隔秒数
-            # 音乐库：None=沿用 config.yaml；否则 {"type": "none|navidrome|music-tag-web",
+            # 音乐库：None=不使用；否则 {"type": "none|navidrome|music-tag-web",
             #   "navidrome": {host,user,password}, "mysql": {host,port,user,password,database}}
             "library": None,
             # 下载账号来源："self"=用当前登录账号（默认）；"borrowed"=用借用账号

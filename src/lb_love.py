@@ -9,7 +9,8 @@
     navidrome Navidrome 标签里的 MBID（musicBrainzId）
     lookup    ListenBrainz 元数据查询（按歌手+歌名）；结果要再用匹配器核对歌手/歌名，对不上就丢弃，
               宁可少同步，也不把红心点到别的录音上
-  解析不出 MBID 的跳过并计数（PRD：没有 MBID 就不同步）；
+    manual    用户在页面上手动指定的 MBID（永久有效，优先级最高）；用户也可把某首标记为「忽略」
+  解析不出 MBID 的跳过并计数（PRD：没有 MBID 就不同步），并把清单交给页面让用户人工处理；
 - 单首失败只记录、下次重试；Token 失效（401/403）则整轮终止。
 """
 
@@ -44,6 +45,7 @@ class LoveDeps:
     now: Callable[[], datetime] = datetime.now
     sleep: Callable[[float], None] = lambda s: None
     plan: List[Dict[str, Any]] = field(default_factory=list)      # dry_run 时填充：将要提交的歌
+    unresolved: List[Dict[str, Any]] = field(default_factory=list)  # 解析不出的歌（供页面人工处理）：{id,artist,title,reason,cand}
     lookup_budget: int = LOOKUPS_PER_RUN
     lookups_done: int = field(default=0, init=False)
 
@@ -64,6 +66,10 @@ def resolve_mbid(d: LoveDeps, song: Dict[str, Any], by_item: Dict[str, str]) -> 
         return None
     cached = lb_repo.cache_get_mbid(d.db, na, nt)
     if cached is not None:
+        if cached["ignored"]:                                # 用户手动标记「忽略」：不提交、不再查询
+            return {"mbid": "", "source": "ignored"}
+        if cached["manual"] and cached["mbid"]:              # 用户手动指定：永久有效，优先于自动结果
+            return {"mbid": cached["mbid"].lower(), "source": "manual"}
         if cached["found"]:
             return {"mbid": cached["mbid"], "source": "lookup"}
         looked = datetime.fromisoformat(cached["looked_up_at"])
@@ -79,7 +85,9 @@ def resolve_mbid(d: LoveDeps, song: Dict[str, Any], by_item: Dict[str, str]) -> 
         # 核对：LB 返回的歌手/歌名必须与这首歌吻合（含繁简、版本词、多歌手），否则不信
         probe = LocalIndex([LocalFile(nd_song_id=song["id"], library="main", artist=song["artist"], title=song["title"])])
         ok = match(probe, Target(artist=r.get("artist", ""), title=r.get("title", ""))).status == "main"
-    lb_repo.cache_put_mbid(d.db, na, nt, r["recording_mbid"].lower() if ok else "", ok, d.now())
+    reason = "" if ok else ("mismatch" if r else "no_result")
+    cand = "" if ok or not r else f"{r.get('artist', '')} - {r.get('title', '')}"
+    lb_repo.cache_put_mbid(d.db, na, nt, r["recording_mbid"].lower() if ok else "", ok, d.now(), reason=reason, cand=cand)
     return {"mbid": r["recording_mbid"].lower(), "source": "lookup"} if ok else None
 
 
@@ -115,9 +123,16 @@ def run_love_sync(d: LoveDeps) -> Dict[str, Any]:
             h.add("lookup_errors")                           # 这一首查询失败（网络/限流）：不缓存，下次再试
             h.log(f"MBID 查询失败，跳过（{song['artist']} - {song['title']}）：{e}", "WARNING")
             continue
+        if found and found["source"] == "ignored":
+            h.add("ignored")
+            continue
         if not found:
             h.add("unresolved")
             unresolved.append(f"{song['artist']} - {song['title']}")
+            row = lb_repo.cache_get_mbid(d.db, artist_key(song["artist"]), title_key(song["title"]))
+            d.unresolved.append({"id": song["id"], "artist": song["artist"], "title": song["title"],
+                                 "reason": (row["reason"] if row is not None else "") or "unknown",
+                                 "cand": row["cand"] if row is not None else ""})
             continue
         h.add(f"via_{found['source']}")
         mbid = found["mbid"]

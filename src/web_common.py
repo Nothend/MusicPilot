@@ -1,6 +1,6 @@
 """Web 控制台的公共辅助：下载目录安全、下载来源解析、设置解析。
 
-只复用现有的 NeteaseMusic / Config，不改变其行为。
+只复用现有的 NeteaseMusic，不改变其行为。
 """
 
 import logging
@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config import Config
 from http_client import SESSION
 from library import MusicTagWebChecker, NavidromeChecker, make_library_checker
 from models import QualityLevel
@@ -152,63 +151,19 @@ def fetch_tracks(wn: WebNetease, source: Dict[str, Any], uid: Optional[int]) -> 
 
 # ---------------------------------------------------------------- 设置解析
 
-def make_config(data: Dict[str, Any]) -> Config:
-    """用 dict 直接构造 Config（不读文件），供复用只认 Config 的 library 检查器。"""
-    cfg = Config.__new__(Config)
-    cfg.config_path = None
-    cfg.config = data
-    return cfg
-
-
-def load_config_or_empty(data_dir: Optional[Path] = None) -> Config:
-    """加载可选的旧版 config.yaml，仅作为页面设置的默认值来源。
-
-    查找顺序：CONFIG_PATH → 项目根/当前目录的 config.yaml → <数据目录>/config.yaml。
-    都不存在（新用户）或损坏时退化为空配置，Web 完全靠页面设置运行。
-    """
-    candidates = []
-    if os.getenv("CONFIG_PATH"):
-        candidates.append(Path(os.environ["CONFIG_PATH"]))
-    candidates.append(Path(__file__).resolve().parent.parent / "config.yaml")
-    candidates.append(Path.cwd() / "config.yaml")
-    if data_dir:
-        candidates.append(Path(data_dir) / "config.yaml")
-    # 先判断文件是否存在再交给 Config：新用户没有该文件是正常情况，不应打出 ERROR 日志
-    for path in candidates:
-        if path.is_file():
-            try:
-                return Config(str(path))
-            except Exception as e:
-                logger.warning(f"读取 {path} 失败（{e}），忽略")
-    logger.info("未找到 config.yaml，所有设置以 Web 页面为准")
-    return make_config({})
-
-
 # 音乐库设置：类型 + 两个后端各自的连接参数
 LIBRARY_TYPES = ("none", "navidrome", "music-tag-web")
 
 
-def library_from_config(config: Config) -> Dict[str, Any]:
-    """把 config.yaml 里的 Navidrome / music-tag-web 节点整理成页面设置的结构。"""
-    nav = config.get("NAVIDROME") if isinstance(config.get("NAVIDROME"), dict) else {}
-    mysql = config.get("music-tag-web") if isinstance(config.get("music-tag-web"), dict) else {}
-    # 与 make_library_checker 一致：Navidrome 优先
-    ltype = ("navidrome" if config.is_enabled("NAVIDROME")
-             else "music-tag-web" if config.is_enabled("MUSIC-TAG-WEB") else "none")
-    return {
-        "type": ltype,
-        "navidrome": {"host": str(nav.get("NAVIDROME_HOST") or ""), "user": str(nav.get("NAVIDROME_USER") or ""),
-                      "password": str(nav.get("NAVIDROME_PASS") or "")},
-        "mysql": {"host": str(mysql.get("host") or ""), "port": int(mysql.get("port") or 3306),
-                  "user": str(mysql.get("user") or ""), "password": str(mysql.get("password") or ""),
-                  "database": str(mysql.get("database") or "")},
-    }
+def default_library() -> Dict[str, Any]:
+    """从未在页面保存过音乐库设置时的默认值：不使用（只检查本地是否已下载）。"""
+    return {"type": "none", "navidrome": {"host": "", "user": "", "password": ""},
+            "mysql": {"host": "", "port": 3306, "user": "", "password": "", "database": ""}}
 
 
-def effective_library(config: Config, settings: Dict[str, Any]) -> Dict[str, Any]:
-    """页面保存过则以页面为准，否则沿用 config.yaml。"""
+def effective_library(settings: Dict[str, Any]) -> Dict[str, Any]:
     lib = settings.get("library")
-    return lib if isinstance(lib, dict) else library_from_config(config)
+    return lib if isinstance(lib, dict) else default_library()
 
 
 def merge_library(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -249,32 +204,20 @@ def merge_library(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str,
     return out
 
 
-def library_checker_config(lib: Dict[str, Any]) -> Optional[Config]:
-    """由页面/配置的音乐库设置拼出 make_library_checker 所需的 Config；类型为 none 返回 None。"""
-    if lib["type"] == "navidrome":
-        n = lib["navidrome"]
-        return make_config({"NAVIDROME": {"USE_NAVIDROME": True, "NAVIDROME_HOST": n["host"],
-                                          "NAVIDROME_USER": n["user"], "NAVIDROME_PASS": n["password"]}})
-    if lib["type"] == "music-tag-web":
-        return make_config({"music-tag-web": {"USE_MYSQL": True, **lib["mysql"]}})
-    return None
-
-
-def build_library_checker(config: Config, settings: Dict[str, Any]):
+def build_library_checker(settings: Dict[str, Any]):
     """按当前设置创建库检查器；未启用返回 None。连接失败会抛异常，由调用方降级为仅本地去重。"""
     if not settings.get("use_library", True):
         return None
-    cfg = library_checker_config(effective_library(config, settings))
-    return make_library_checker(cfg) if cfg is not None else None
+    return make_library_checker(effective_library(settings))
 
 
 def test_library(lib: Dict[str, Any]) -> str:
     """测试音乐库连接，成功返回说明文字，失败抛 ValueError(原因)。"""
-    cfg = library_checker_config(lib)
-    if cfg is None:
+    if lib["type"] == "none":
         raise ValueError("当前选择的是「不使用」，无需测试")
     if lib["type"] == "navidrome":
-        checker = NavidromeChecker(cfg)
+        n = lib["navidrome"]
+        checker = NavidromeChecker(n["host"], n["user"], n["password"])
         if not checker.base_url:
             raise ValueError("Navidrome 地址无效")
         try:
@@ -287,29 +230,27 @@ def test_library(lib: Dict[str, Any]) -> str:
             raise ValueError(f"Navidrome 认证失败：{(sub.get('error') or {}).get('message', '用户名或密码错误')}")
         return "Navidrome 连接成功"
     try:
-        checker = MusicTagWebChecker(cfg)  # 构造即建立连接
+        checker = MusicTagWebChecker(lib["mysql"])  # 构造即建立连接
         checker.close()
     except Exception as e:
         raise ValueError(f"无法连接 MySQL：{e}")
     return "MySQL 连接成功"
 
 
-def effective_request_delay(config: Config, settings: Dict[str, Any]) -> float:
-    """每首歌之间的间隔秒数：页面 > config.yaml(REQUEST_DELAY) > 0.5。"""
+def effective_request_delay(settings: Dict[str, Any]) -> float:
+    """每首歌之间的间隔秒数：页面设置，未设置为 0.5。"""
     v = settings.get("request_delay")
     if v is None:
-        v = config.get("REQUEST_DELAY", 0.5)
+        v = 0.5
     try:
         return max(0.0, float(v))
     except (TypeError, ValueError):
         return 0.5
 
 
-def effective_bark_api(config: Config, settings: Dict[str, Any]) -> str:
-    """Web 设置优先：None 表示沿用 config.yaml；字符串（含空串=关闭）表示覆盖。"""
+def effective_bark_api(settings: Dict[str, Any]) -> str:
+    """页面里填的 Bark 地址；未设置或空串都表示不推送。"""
     api = settings.get("bark_api")
-    if api is None:
-        api = config.get("BARK_API", "")
     return (api or "").strip()
 
 
@@ -357,11 +298,11 @@ def download_account_of(state: Dict[str, Any]) -> Dict[str, Any]:
     return {"kind": "self", "account": state.get("account")}
 
 
-def effective_quality(config: Config, settings: Dict[str, Any], is_vip: bool) -> str:
-    """非 VIP 固定 exhigh（只能拿 MP3）；VIP 取 Web 设置 > config.yaml > lossless。"""
+def effective_quality(settings: Dict[str, Any], is_vip: bool) -> str:
+    """非 VIP 固定 exhigh（只能拿 MP3）；VIP 取页面设置，未设置为 lossless。"""
     if not is_vip:
         return NON_VIP_QUALITY
-    quality = settings.get("quality") or config.get("QUALITY_LEVEL", "lossless")
+    quality = settings.get("quality") or "lossless"
     if quality not in {q.value for q in QualityLevel}:
         quality = "lossless"
     return quality

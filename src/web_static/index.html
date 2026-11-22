@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>云音乐自动下载</title>
+<title>MusicPilot</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23c20c0c'/%3E%3Cpath d='M42 14v26.5a8.5 8.5 0 1 1-4-7.2V22l-14 3v21.5a8.5 8.5 0 1 1-4-7.2V20z' fill='white'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#f5f6f8;--card:#fff;--fg:#1f2430;--sub:#7b8494;--line:#e6e9ef;--pri:#d33a31;--pri2:#b92f27;--ok:#1f9d55;--warn:#d98a00;--err:#d33a31;--h:34px}
@@ -137,7 +137,7 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
 <body>
 <div class="wrap">
 <div class="top">
-  <h1>🎵 云音乐自动下载</h1>
+  <h1>🎵 MusicPilot</h1>
   <div id="acctChip" class="chip"></div>
 </div>
 
@@ -248,6 +248,7 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
     <div class="qa">
       <button class="ghost" onclick="actLovePreview()">预览要提交的红心</button>
       <button class="ghost" onclick="showLovePreview()">查看上次预览</button>
+      <button class="ghost" onclick="showUnresolved()">未解析的红心<span id="unresN"></span></button>
       <button class="ghost" onclick="actLove()">提交到 ListenBrainz</button>
     </div>
     <div class="hint" style="margin:8px 0 0 0">「同步索引」只读取 Navidrome 更新本地曲库索引；「扫描并同步索引」会先让 Navidrome 扫描文件（手动移动过文件后用它）。红心同步会真实写入 ListenBrainz，建议先预览。</div>
@@ -378,7 +379,7 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <h2>红心同步到 ListenBrainz</h2>
   <div class="f"><span class="lb">启用</span><div class="c"><label class="sw"><input type="checkbox" id="loveOn"> 把 Navidrome 里的红心同步为 ListenBrainz 的 love</label></div></div>
   <div class="f"><span class="lb">每轮上限</span><div class="c"><input type="text" id="loveMax" class="w90"><span class="sub">首（首次启用时红心较多，会分几轮提交完）</span></div></div>
-  <div class="hint"><b>会真实写入你的 ListenBrainz，影响推荐。</b>只增不减：在 Navidrome 取消红心不会取消 LB 上的 love。只提交有把握的 MBID（优先用推荐歌单自带的，其次 Navidrome 标签，最后按歌手+歌名查询并核对），查不准的会跳过。名字查询较慢，每轮最多查 100 首新的，其余下一轮继续。</div>
+  <div class="hint"><b>会真实写入你的 ListenBrainz，影响推荐。</b>只增不减：在 Navidrome 取消红心不会取消 LB 上的 love。只提交有把握的 MBID（优先用推荐歌单自带的，其次 Navidrome 标签，最后按歌手+歌名查询并核对），查不准的会跳过，并列在「推荐」页的「未解析的红心」里，可搜索 MusicBrainz 手动指定或标记忽略。名字查询较慢，每轮最多查 100 首新的，其余下一轮继续。</div>
   <div class="acts"><button onclick="lbSave('love')">保存</button></div>
 </div>
 <div class="card" id="cLbSch">
@@ -411,6 +412,14 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="sub" id="loveMeta" style="margin-bottom:8px"></div>
   <div class="tbl" id="loveList" style="max-height:50vh"></div>
   <div class="acts"><button class="ghost" onclick="$('loveDlg').close()">关闭</button></div>
+</dialog>
+<dialog id="unresDlg" style="width:min(780px,96vw)">
+  <h2 style="font-size:15px;margin:0 0 6px">解析不出 MBID 的红心</h2>
+  <div class="sub" id="unresMeta" style="margin-bottom:6px"></div>
+  <div class="hint" style="margin:0 0 8px">ListenBrainz 的红心必须对应 MusicBrainz 里的一条录音（MBID）。这些歌查不到或对不上，所以被跳过。你可以：<b>搜索</b> MusicBrainz 并选中正确的那条；已经知道 MBID 就直接<b>粘贴</b>；MusicBrainz 里本来就没有的（多见于华语歌）点<b>忽略</b>，以后不再提示。处理结果永久有效，下次同步生效。</div>
+  <div class="tbl" id="unresList" style="max-height:52vh"></div>
+  <details id="unresDone" style="margin-top:8px"><summary class="sub" id="unresDoneT" style="cursor:pointer"></summary><div class="tbl" id="unresDoneL" style="max-height:24vh"></div></details>
+  <div class="acts"><button class="ghost" onclick="$('unresDlg').close()">关闭</button></div>
 </dialog>
 <dialog id="borrowDlg">
   <h2 style="font-size:15px;margin:0 0 6px">粘贴导入借用账号</h2>
@@ -651,6 +660,62 @@ async function showLovePreview() {
   $('loveList').innerHTML = pv.plan.map(p => `<div class="it" style="grid-template-columns:minmax(0,1fr) 110px"><div class="nm">${esc(p.artist)} - ${esc(p.title)}</div><span class="sub">${SRC[p.source] || p.source}</span></div>`).join('') ||
     '<div class="sub" style="padding:10px">没有需要提交的</div>';
   $('loveDlg').showModal();
+}
+/* ---- 解析不出 MBID 的红心：人工处理 ---- */
+let UNRES = {items: [], manual: [], res: {}};
+async function showUnresolved() {
+  try { const r = await api('/api/lb/love/unresolved'); UNRES = {items: r.items, manual: r.manual, res: {}, at: r.at}; }
+  catch (e) { toast(e.message); return; }
+  if (!UNRES.at && !UNRES.manual.length) { toast('还没有同步过红心：先点「预览要提交的红心」'); return; }
+  unresRender();
+  $('unresDlg').showModal();
+}
+function unresRender() {
+  const it = UNRES.items;
+  $('unresMeta').textContent = (UNRES.at ? `来自 ${fmtTime(UNRES.at)} 的那次同步/预览：` : '') + `还有 ${it.length} 首待处理`;
+  $('unresN').textContent = it.length ? `（${it.length}）` : '';
+  $('unresList').innerHTML = it.map((x, i) => `<div style="padding:8px;border-bottom:1px solid var(--line)">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="nm grow" style="flex:1;min-width:200px"><b>${esc(x.artist)} - ${esc(x.title)}</b>
+      <div class="sub">${esc(x.reason_zh)}${x.cand ? '：LB 返回的是「' + esc(x.cand) + '」' : ''}</div></div>
+      <button class="ghost" onclick="unresSearch(${i})">搜索</button><button class="ghost" onclick="unresIgnore(${i})">忽略</button></div>
+    <div id="unresBox${i}" style="display:none;margin-top:6px"></div></div>`).join('') || '<div class="sub" style="padding:10px">没有待处理的歌</div>';
+  const m = UNRES.manual;
+  $('unresDoneT').textContent = `已手动处理 ${m.length} 首（点开可撤销）`;
+  $('unresDoneL').innerHTML = m.map((x, j) => `<div class="sched"><div class="grow"><b>${esc(x.artist)} - ${esc(x.title)}</b>
+    <span class="sub">${x.ignored ? '已忽略' : 'MBID ' + esc(x.mbid)}</span></div><button class="ghost" onclick="unresUndo(${j})">撤销</button></div>`).join('') || '<div class="sub" style="padding:8px">无</div>';
+}
+async function unresSearch(i) {
+  const x = UNRES.items[i], box = $('unresBox' + i);
+  box.style.display = ''; box.innerHTML = '<div class="sub">正在搜索 MusicBrainz…（限速约每秒 1 次）</div>';
+  let r;
+  try { r = await api('/api/lb/love/mb_search?artist=' + encodeURIComponent(x.artist) + '&title=' + encodeURIComponent(x.title)); }
+  catch (e) { box.innerHTML = `<div class="sub">${esc(e.message)}</div>` + unresPaste(i); return; }
+  UNRES.res[i] = r.results;
+  const len = ms => ms ? Math.floor(ms / 60000) + ':' + String(Math.round(ms / 1000) % 60).padStart(2, '0') : '';
+  box.innerHTML = (r.results.map((c, j) => `<div class="sched"><div class="grow"><b>${esc(c.title)}</b> <span class="sub">${esc(c.artist)}${c.release ? ' · ' + esc(c.release) : ''}${c.length_ms ? ' · ' + len(c.length_ms) : ''} · 匹配度 ${c.score == null ? '?' : c.score}</span></div>
+    <button onclick="unresPick(${i},${j})">就是它</button></div>`).join('') || '<div class="sub">MusicBrainz 里没搜到。可以到 musicbrainz.org 自己找，或直接忽略。</div>') + unresPaste(i);
+}
+function unresPaste(i) {
+  return `<div style="display:flex;gap:6px;margin-top:6px"><input type="text" id="unresMbid${i}" placeholder="或粘贴 MBID（36 位编号，也可粘贴 musicbrainz.org/recording/… 链接）" style="flex:1"><button class="ghost" onclick="unresPaste2(${i})">使用</button></div>`;
+}
+function unresPaste2(i) {
+  const m = ($('unresMbid' + i).value || '').match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+  if (!m) { toast('没有识别到 MBID'); return; }
+  unresSave(i, {mbid: m[0]});
+}
+function unresPick(i, j) { unresSave(i, {mbid: UNRES.res[i][j].mbid}); }
+async function unresIgnore(i) { unresSave(i, {ignore: true}); }
+async function unresSave(i, extra) {
+  try { await api('/api/lb/love/resolve', Object.assign({id: UNRES.items[i].id}, extra)); }
+  catch (e) { toast(e.message); return; }
+  toast(extra.ignore ? '已忽略，以后不再提示' : '已记下，下次红心同步时会提交');
+  const r = await api('/api/lb/love/unresolved'); UNRES.items = r.items; UNRES.manual = r.manual; UNRES.res = {}; unresRender();
+}
+async function unresUndo(j) {
+  const x = UNRES.manual[j];
+  try { await api('/api/lb/love/undo', {na: x.norm_artist, nt: x.norm_title}); } catch (e) { toast(e.message); return; }
+  toast('已撤销，下次红心同步会重新自动解析');
+  const r = await api('/api/lb/love/unresolved'); UNRES.manual = r.manual; UNRES.items = r.items; unresRender();
 }
 async function actLove() {
   let pv = null; try { pv = (await api('/api/lb/love/preview')).preview; } catch (e) {}
@@ -1005,9 +1070,9 @@ function renderSettings() {
   const active = document.activeElement;
   if (active && ['INPUT', 'SELECT'].includes(active.tagName) && $('cSet').contains(active)) return;  // 用户正在输入时不覆盖
   $('bark').value = s.bark_api || '';
-  $('barkHint').textContent = s.from_config.bark ? '当前沿用 config.yaml 中的 BARK_API；在此保存后以页面设置为准。' : (s.bark_api ? '' : '未设置，不会推送通知。');
+  $('barkHint').textContent = s.bark_api ? '' : '未设置，不会推送通知。';
   const q = $('qSel');
-  q.innerHTML = '<option value="">默认（' + esc(s.config_quality) + '）</option>' + (s.qualities || []).map(x => `<option value="${x}">${x}</option>`).join('');
+  q.innerHTML = '<option value="">默认（lossless）</option>' + (s.qualities || []).map(x => `<option value="${x}">${x}</option>`).join('');
   q.value = s.quality || '';
   q.disabled = !(S.account.logged_in && S.account.is_vip);
   $('delay').value = s.request_delay;
@@ -1020,9 +1085,8 @@ function renderSettings() {
   $('mDb').value = L.mysql.database; $('mPass').value = '';
   $('mPass').placeholder = L.mysql.has_password ? '密码（已设置，留空不修改）' : '密码';
   libTypeUi();
-  const from = s.from_config.library ? '（沿用 config.yaml 中的配置，保存后以页面为准）' : '';
   $('libState').textContent = (L.type === 'none' ? '当前：未启用，不会检查音乐库' :
-    '当前：已启用 ' + (L.type === 'navidrome' ? 'Navidrome' : 'music-tag-web') + '，下载前会先查重') + from;
+    '当前：已启用 ' + (L.type === 'navidrome' ? 'Navidrome' : 'music-tag-web') + '，下载前会先查重');
 }
 function libTypeUi() {
   const t = $('libType').value;

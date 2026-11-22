@@ -6,7 +6,9 @@
 - 转正检查  每 promote_interval_min 分钟（需开启「自动转正」）
 - 红心同步  每 love_interval_min 分钟（需开启红心同步）
 - 过期清理  cleanup_time（每天，需开启「自动清理」）
-总开关关闭时什么都不触发。触发时若已有任务在运行：跳过并记录，不排队、不重试。
+总开关关闭时什么都不触发。触发时若已有任务在运行（全局只跑一个任务）：不丢弃，每个检查周期重试，
+时间点任务最多等 BUSY_WAIT_MIN 分钟，间隔任务一直等到能跑为止且不重置计时。
+定时同步因网络类错误失败：RETRY_DELAY_MIN 分钟后自动重试，最多 MAX_RETRIES 次。
 设置每次检查时重新读取，页面上改了立刻生效。
 """
 
@@ -22,6 +24,9 @@ from task_manager import TaskBusy
 logger = logging.getLogger(__name__)
 
 TICK = 20
+BUSY_WAIT_MIN = 10          # 时间点任务撞上别的任务时，最多等多久
+RETRY_DELAY_MIN = 10        # 定时同步失败后多久重试
+MAX_RETRIES = 3
 STATE_KEY = "lb.schedule_state"       # {任务名: 上次触发的时间戳键}，防止重启后在同一分钟重复触发
 
 
@@ -31,6 +36,9 @@ class LbScheduler:
         self._stop = threading.Event()
         started = now()
         self._interval_last: Dict[str, datetime] = {"promote": started, "love": started}   # 启动后先等满一个间隔，不立刻跑
+        # 待重试的任务：{name: {task, due, deadline, attempt}}；撞上忙碌 / 网络失败后放这里
+        self._pending: Dict[str, Dict[str, Any]] = {}
+        self.svc.on_failed = self._on_failed
 
     # ------------------------------------------------------------ 规则
     def due(self, s: Dict[str, Any], now: datetime) -> List[Dict[str, Any]]:
@@ -64,25 +72,73 @@ class LbScheduler:
         s = self.svc.settings()
         fired_state = self.kv.get(STATE_KEY, {}) or {}
         started: List[str] = []
-        for t in self.due(s, now):
+        todo: List[Dict[str, Any]] = []
+        due_now = self.due(s, now)
+        for t in due_now:
             if t["key"] != "interval":
                 if fired_state.get(t["name"]) == t["key"]:
                     continue                                  # 这一分钟已经触发过了（20 秒一次的检查会命中同一分钟多次）
                 fired_state[t["name"]] = t["key"]
                 self.kv.set(STATE_KEY, fired_state)
-            else:
-                self._interval_last[t["name"]] = now          # 间隔任务：不论本次是否启动成功，都从现在重新计时
+            elif t["name"] in self._pending:
+                continue
+            todo.append({"task": t, "attempt": 1, "deadline": None})
+        due_names = {t["name"] for t in due_now}
+        for name, p in list(self._pending.items()):           # 待重试的：到时间了就再试一次
+            if p["task"]["key"] == "interval" and name not in due_names:
+                del self._pending[name]                       # 期间被关掉了开关：不再重试
+                continue
+            if p["due"] <= now and not any(x["task"]["name"] == name for x in todo):
+                todo.append(p)
+        # 红心同步排在转正前面：转正几乎瞬间完成，但它先拿到全局锁时会把同刻到期的红心同步挡掉
+        todo.sort(key=lambda x: 0 if x["task"]["name"] == "love" else 1)
+        for p in todo:
+            t, attempt = p["task"], p["attempt"]
+            name = t["name"]
             try:
-                self.svc.start(t["kind"], trigger="schedule", types=t["types"])
-                started.append(t["name"])
-                logger.info(f"定时触发：{LABELS[t['kind']]}（{t['name']}，{now:%Y-%m-%d %H:%M}）")
+                self.svc.start(t["kind"], trigger="schedule", types=t["types"], attempt=attempt)
             except TaskBusy as e:
-                logger.warning(f"定时触发 {t['name']} 时已有任务在运行，本次跳过：{e}")
+                self._on_busy(t, p, now, e)
+                continue
             except NotReady as e:
-                logger.warning(f"定时触发 {t['name']} 被拒绝：{e}")
+                logger.warning(f"定时触发 {name} 被拒绝：{e}")
             except Exception as e:
-                logger.error(f"定时触发 {t['name']} 失败: {e}", exc_info=True)
+                logger.error(f"定时触发 {name} 失败: {e}", exc_info=True)
+            else:
+                started.append(name)
+                logger.info(f"定时触发：{LABELS[t['kind']]}（{name}，{now:%Y-%m-%d %H:%M}"
+                            f"{'，第 %d 次重试' % (attempt - 1) if attempt > 1 else ''}）")
+            self._pending.pop(name, None)
+            if t["key"] == "interval":
+                self._interval_last[name] = now               # 间隔任务：真正尝试过（成功/被拒/出错）才重新计时
         return started
+
+    def _on_busy(self, t: Dict[str, Any], p: Dict[str, Any], now: datetime, e: Exception) -> None:
+        name = t["name"]
+        if t["key"] == "interval":
+            if name not in self._pending:
+                logger.info(f"定时触发 {name} 时已有任务在运行，稍后再试：{e}")
+            self._pending[name] = {"task": t, "attempt": p["attempt"], "due": now, "deadline": None}
+            return
+        deadline = p.get("deadline") or now + timedelta(minutes=BUSY_WAIT_MIN)
+        if now >= deadline:
+            logger.warning(f"定时触发 {name} 等了 {BUSY_WAIT_MIN} 分钟仍有任务在运行，放弃本次：{e}")
+            self._pending.pop(name, None)
+            return
+        if name not in self._pending:
+            logger.info(f"定时触发 {name} 时已有任务在运行，稍后再试：{e}")
+        self._pending[name] = {"task": t, "attempt": p["attempt"], "due": now + timedelta(seconds=TICK), "deadline": deadline}
+
+    def _on_failed(self, kind: str, types: Optional[List[str]], attempt: int) -> bool:
+        """定时任务因网络类错误失败（由 LbService 回调）：安排稍后重试；已达上限返回 False（由调用方发通知）。"""
+        if attempt > MAX_RETRIES:
+            return False
+        name = "retry_" + kind + "_" + "_".join(types or [])
+        now = self.now()
+        self._pending[name] = {"task": {"name": name, "kind": kind, "types": types, "key": name},
+                               "attempt": attempt + 1, "due": now + timedelta(minutes=RETRY_DELAY_MIN),
+                               "deadline": now + timedelta(minutes=RETRY_DELAY_MIN + BUSY_WAIT_MIN)}
+        return True
 
     # ------------------------------------------------------------ 展示用：下一次什么时候跑
     def upcoming(self, now: Optional[datetime] = None) -> List[Dict[str, Any]]:

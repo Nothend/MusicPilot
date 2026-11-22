@@ -14,7 +14,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.listenbrainz.org"
-USER_AGENT = "musicpilot/1.0 (+https://github.com/Nothend/musicpilot)"
+USER_AGENT = "MusicPilot/1.0 (+https://github.com/Nothend/MusicPilot)"
 
 # createdfor 歌单的 source_patch -> 推荐类型。daily 的取值在账号出现 Daily Jams 前未实测，
 # 因此另按标题兜底（见 classify）
@@ -50,7 +50,7 @@ def _mbid_from_identifier(identifier: Any) -> str:
 class ListenBrainzClient:
     def __init__(self, token: str = "", username: str = "", base_url: str = BASE_URL,
                  session: Optional[requests.Session] = None, timeout: float = 30,
-                 max_tries: int = 3, sleep=time.sleep):
+                 max_tries: int = 5, sleep=time.sleep):
         self.token = token
         self.username = username
         self.base_url = base_url.rstrip("/")

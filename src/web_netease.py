@@ -17,7 +17,7 @@ from http_client import SESSION, APIException, netease_headers
 
 DAILY_RECOMMEND_API = "https://interface3.music.163.com/eapi/v3/discovery/recommend/songs"
 
-# 与 config.yaml 示例保持一致的附加 cookie（pc 客户端标识）
+# 附加 cookie（pc 客户端标识）
 _EXTRA_COOKIES = {"os": "pc", "appver": "8.9.75"}
 
 # 扫码状态码

@@ -159,6 +159,36 @@ def test_failure_is_notified_and_recorded(env):
     assert len(env.notes) == 1 and "失败" in env.notes[0][1] and "无法连接" in env.notes[0][1]
 
 
+def _boom(*a, **k):
+    raise LBError("ListenBrainz 请求失败（网络错误: SSLError）：/x")
+
+
+def test_scheduled_sync_network_failure_asks_for_retry_and_stays_quiet(env):
+    calls = []
+    env.svc.on_failed = lambda kind, types, attempt: calls.append((kind, types, attempt)) or True
+    env.lb.created_for = _boom
+    env.svc.start("sync", trigger="schedule", types=["daily"]); env.wait()
+    assert calls == [("sync", ["daily"], 1)]
+    assert env.notes == []                                     # 已安排重试：先不打扰
+
+
+def test_scheduled_sync_failure_notifies_when_retries_are_exhausted(env):
+    env.svc.on_failed = lambda kind, types, attempt: False
+    env.lb.created_for = _boom
+    env.svc.start("sync", trigger="schedule", attempt=4); env.wait()
+    assert len(env.notes) == 1 and "已自动重试 3 次仍失败" in env.notes[0][1]
+
+
+def test_manual_sync_and_non_network_errors_never_auto_retry(env):
+    calls = []
+    env.svc.on_failed = lambda *a: calls.append(a) or True
+    env.lb.created_for = _boom
+    env.svc.start("sync"); env.wait()                           # 手动触发：用户自己看得到，不自动重试
+    env.lb.created_for = lambda n: (_ for _ in ()).throw(LBError("Token 无效", 401))
+    env.svc.start("sync", trigger="schedule"); env.wait()       # 401 不是网络抖动
+    assert calls == [] and len(env.notes) == 2
+
+
 def test_adapter_not_ready_fails_the_task_with_a_readable_reason(env):
     def bad(s, delay):
         raise NotReady("推荐联动只下载无损，需要黑胶 VIP")
@@ -287,29 +317,25 @@ class Store:
     def get(self): return self.st
 
 
-class Cfg:
-    def get(self, k, default=None): return default
-
-
 def acct(token):
     return {"cookies": {"MUSIC_U": token}, "nickname": token}
 
 
 def test_vip_login_account_is_used_directly(netease):
     netease["me"] = {"is_vip": True}
-    a = default_adapter_factory(Store(state(acct("me"))), Cfg(), {}, 1.5)
+    a = default_adapter_factory(Store(state(acct("me"))), {}, 1.5)
     assert a.cookies == {"MUSIC_U": "me"} and a.quality == "lossless" and a.allow_mp3 is False and a.request_delay == 1.5
 
 
 def test_vip_login_ignores_borrowed_account_entirely(netease):
     netease["me"] = {"is_vip": True}                       # 借用账号根本不在注册表里：若被校验就会失败
-    a = default_adapter_factory(Store(state(acct("me"), acct("friend"), "borrowed")), Cfg(), {}, 0)
+    a = default_adapter_factory(Store(state(acct("me"), acct("friend"), "borrowed")), {}, 0)
     assert a.cookies == {"MUSIC_U": "me"}
 
 
 def test_non_vip_uses_borrowed_vip_account(netease):
     netease["me"] = {"is_vip": False}; netease["friend"] = {"is_vip": True}
-    a = default_adapter_factory(Store(state(acct("me"), acct("friend"), "borrowed")), Cfg(), {}, 0)
+    a = default_adapter_factory(Store(state(acct("me"), acct("friend"), "borrowed")), {}, 0)
     assert a.cookies == {"MUSIC_U": "friend"} and a.downloader.api == "api-for-friend" and a.quality == "lossless"
 
 
@@ -324,10 +350,10 @@ def test_non_vip_uses_borrowed_vip_account(netease):
 def test_account_problems_give_clear_errors_and_never_fall_back_to_non_vip(netease, st, reg, msg):
     netease.update(reg)
     with pytest.raises(NotReady, match=msg):
-        default_adapter_factory(Store(st), Cfg(), {}, 0)
+        default_adapter_factory(Store(st), {}, 0)
 
 
 def test_configured_quality_is_respected_for_vip(netease):
     netease["me"] = {"is_vip": True}
-    a = default_adapter_factory(Store(state(acct("me"), quality="hires")), Cfg(), {}, 0)
+    a = default_adapter_factory(Store(state(acct("me"), quality="hires")), {}, 0)
     assert a.quality == "hires"

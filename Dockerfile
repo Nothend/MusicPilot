@@ -3,8 +3,8 @@ FROM python:3.12-alpine3.21 AS builder
 
 WORKDIR /app
 
-# cryptography / Pillow / PyYAML 等的编译期依赖
-RUN apk add --no-cache gcc musl-dev openssl-dev libffi-dev yaml-dev
+# cryptography / Pillow 等的编译期依赖
+RUN apk add --no-cache gcc musl-dev openssl-dev libffi-dev
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --target=/app/deps -r requirements.txt
@@ -32,7 +32,7 @@ COPY src/ /app/src/
 COPY entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh
 
-# Web 控制台端口（WEB_ENABLE=true 时监听 WEB_PORT，默认 8080；compose 示例用 5119）
+# Web 控制台端口（监听 WEB_PORT，默认 8080；compose 示例用 5119）
 EXPOSE 5119
 
 ENTRYPOINT ["/app/entrypoint.sh"]

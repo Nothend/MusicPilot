@@ -149,26 +149,71 @@ def test_love_is_off_by_default_and_runs_on_its_own_interval(env):
 
 
 # ---------------------------------------------------------------- 忙碌 / 未就绪 / 异常
-def test_busy_is_skipped_not_queued_and_not_retried_in_the_same_minute(env):
+def test_busy_fixed_time_task_is_retried_on_next_tick_until_it_can_run(env):
     sched, svc, clock, _ = env
     svc.raises = TaskBusy({"type": "sync", "started_at": "x"})
     at(clock, "08:30")
-    assert sched.tick() == []                                       # 没有启动
+    assert sched.tick() == []                                       # 这一刻撞上了别的任务
     svc.raises = None
     clock.t = clock.t.replace(second=45)
-    assert sched.tick() == []                                       # 同一分钟不会补触发：错过就错过
-    assert len(svc.calls) == 1
+    assert sched.tick() == ["daily_sync"]                           # 下一个检查周期就补上，不会白白错过一天
+    assert sched.tick() == []                                       # 补上之后不再重复触发
+    assert len(svc.calls) == 2
 
 
-def test_busy_interval_task_waits_another_interval(env):
+def test_busy_fixed_time_task_gives_up_after_the_wait_window(env):
+    sched, svc, clock, _ = env
+    svc.raises = TaskBusy({})
+    at(clock, "08:30"); assert sched.tick() == []
+    clock.t += timedelta(minutes=11)
+    assert sched.tick() == []                                       # 超过等待窗口：放弃，且清掉待办
+    svc.raises = None
+    clock.t += timedelta(minutes=1)
+    assert sched.tick() == []
+
+
+def test_busy_interval_task_does_not_reset_its_timer(env):
+    """回归：转正(30 分钟)和红心(60 分钟)每小时同刻到期，转正先拿到全局锁，红心被挡后曾重新计时，永远轮不上。"""
     sched, svc, clock, _ = env
     svc.s["discovery"]["auto_promote"] = True
     start = clock.t
     svc.raises = TaskBusy({})
     clock.t = start + timedelta(minutes=30); assert sched.tick() == []
     svc.raises = None
-    clock.t = start + timedelta(minutes=45); assert sched.tick() == []
-    clock.t = start + timedelta(minutes=60); assert sched.tick() == ["promote"]
+    clock.t = start + timedelta(minutes=30, seconds=20); assert sched.tick() == ["promote"]   # 下个检查周期就补上
+    clock.t = start + timedelta(minutes=45); assert sched.tick() == []                          # 补上后重新计时
+    clock.t = start + timedelta(minutes=60, seconds=20); assert sched.tick() == ["promote"]
+
+
+def test_love_is_not_starved_by_promote_due_in_the_same_tick(env):
+    sched, svc, clock, _ = env
+    svc.s["discovery"]["auto_promote"] = True; svc.s["love"]["enabled"] = True
+    clock.t += timedelta(minutes=60)                                # 两者同刻到期
+    order = []
+    orig = svc.start
+
+    def start(kind, **kw):
+        order.append(kind)
+        if len(order) == 1:                                         # 先启动的占住全局锁，后一个撞上 TaskBusy
+            return orig(kind, **kw)
+        raise TaskBusy({"type": order[0]})
+    svc.start = start
+    assert sched.tick() == ["love"]                                 # 红心排前面，先拿到锁
+    svc.start = orig
+    clock.t += timedelta(seconds=20)
+    assert sched.tick() == ["promote"]                              # 转正被挡后下个周期补上
+
+
+def test_scheduled_sync_network_failure_is_retried_later_up_to_the_limit(env):
+    from lb_scheduler import MAX_RETRIES, RETRY_DELAY_MIN
+    sched, svc, clock, _ = env
+    at(clock, "08:30"); assert sched.tick() == ["daily_sync"]
+    for n in range(1, MAX_RETRIES + 1):
+        assert sched._on_failed("sync", ["daily"], n) is True       # 服务层回调：网络失败 → 安排重试
+        clock.t += timedelta(minutes=RETRY_DELAY_MIN - 1); assert sched.tick() == []      # 没到时间不跑
+        clock.t += timedelta(minutes=1); assert sched.tick() == ["retry_sync_daily"]
+        assert svc.calls[-1] == ("sync", "schedule", ["daily"])
+    assert sched._on_failed("sync", ["daily"], MAX_RETRIES + 1) is False                   # 到上限：交给调用方通知
 
 
 def test_not_ready_and_unexpected_errors_do_not_break_the_loop(env):

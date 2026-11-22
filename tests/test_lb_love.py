@@ -72,6 +72,7 @@ class Env:
             deps = lb_love.LoveDeps(self.db, self.settings, self.lb, self.nd, h, dry_run=dry, now=lambda: self.now)
             lb_love.run_love_sync(deps)
         self.plan = deps.plan
+        self.unresolved = deps.unresolved
         return json.loads(self.tm.recent_runs()[0]["stats_json"])
 
     def rec(self):

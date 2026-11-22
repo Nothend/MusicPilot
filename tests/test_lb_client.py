@@ -85,16 +85,22 @@ def test_429_waits_for_reset_in_then_succeeds():
 
 
 def test_5xx_exhausts_and_message_has_no_secret():
-    c, _, _ = client([FakeResp(503, {}), FakeResp(503, {}), FakeResp(503, {})])
+    c, _, _ = client([FakeResp(503, {})] * 5)
     with pytest.raises(LBError) as e:
         c.validate_token()
     assert "SECRET" not in str(e.value)
 
 
 def test_network_error_retried_then_raised():
-    c, _, _ = client([requests.ConnectionError("x")] * 3)
+    c, sess, sleeps = client([requests.ConnectionError("x")] * 5)
     with pytest.raises(LBError, match="网络错误"):
         c.validate_token()
+    assert sleeps == [2, 4, 8, 16]            # 实测 SSLError 抖动能持续十几秒：退避总共约 30 秒，而不是原来的 6 秒
+
+
+def test_ssl_error_is_retried_and_can_recover():
+    c, _, sleeps = client([requests.exceptions.SSLError("eof")] * 3 + [FakeResp(200, {"valid": True, "user_name": "me"})])
+    assert c.validate_token()["valid"] is True and len(sleeps) == 3
 
 
 def test_4xx_raises_immediately_with_server_message():

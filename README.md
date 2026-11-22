@@ -1,4 +1,4 @@
-# 佛系云音乐自动下载
+# MusicPilot · 佛系云音乐自动下载
 
 [![Docker Hub](https://img.shields.io/docker/pulls/leonautilus/musicpilot?logo=docker)](https://hub.docker.com/r/leonautilus/musicpilot)
 
@@ -48,10 +48,8 @@ services:
       - ./data:/app/data            # 登录信息、设置、记录（请定期备份）
     environment:
       - TZ=Asia/Shanghai            # 时区，务必设对
-      - WEB_ENABLE=true
       - WEB_PORT=5119
       - WEB_PASSWORD=请改成你自己的密码   # 网页登录密码，用户名是 admin
-      - CRON_ENABLE=false           # 只用网页，不需要旧的定时脚本
 ```
 
 **2. 启动：**
@@ -142,10 +140,22 @@ docker compose up -d       # 用新镜像重建容器
 
 | 文档 | 内容 |
 |---|---|
-| [Web 控制台详解](docs/web-console.md) | 所有页面功能、环境变量、借用账号、从旧版迁移 |
+| [Web 控制台详解](docs/web-console.md) | 所有页面功能、环境变量、借用账号 |
 | [推荐联动详解](docs/recommendation.md) | ListenBrainz 联动的前置条件、配置、工作方式、常见问题 |
-| [旧版 cron 批处理模式](docs/cron-mode.md) | 不用网页、只用配置文件 + 定时脚本的老用法 |
 | [维护者指南](docs/maintainers.md) | 打包、发布 Docker Hub、开发与测试 |
+
+---
+
+## 赞助
+
+如果这个项目对你有帮助，欢迎请作者喝杯咖啡，自愿、不强求。赞助不影响任何功能，也不提供额外的技术支持承诺。
+
+<table>
+  <tr>
+    <td align="center"><img src="assets/wechat.png" width="200" alt="微信赞助码"><br>微信</td>
+    <td align="center"><img src="assets/alipay.png" width="200" alt="支付宝赞助码"><br>支付宝</td>
+  </tr>
+</table>
 
 ---
 

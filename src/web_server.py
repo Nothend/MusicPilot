@@ -21,6 +21,8 @@ from urllib.parse import parse_qs, urlparse
 import segno
 
 import lb_checks
+import lb_manual
+import mb_client
 import lb_queries
 import lb_repo
 import lb_settings
@@ -29,7 +31,7 @@ from logger import setup_logger
 from models import QualityLevel
 from web_common import (base_download_dir, download_account_of, effective_bark_api, effective_library,
                         effective_quality, effective_request_delay, fetch_tracks, host_download_dir,
-                        list_subdirs, load_config_or_empty, merge_library, normalize_source,
+                        list_subdirs, merge_library, normalize_source,
                         parse_account_paste, resolve_subdir, test_library)
 from web_jobs import JobManager
 from web_netease import (QR_EXPIRED, QR_OK, WebNetease, qr_check, qr_create, qr_login_url)
@@ -52,7 +54,6 @@ class App:
 
     def __init__(self, data_dir: Optional[Path] = None, base_dir: Optional[Path] = None):
         data_dir = data_dir or default_data_dir()
-        self.config = load_config_or_empty(data_dir)  # 可选的旧版配置，仅作页面设置的默认值
         self.store = WebStore(data_dir / "web_state.json")
         self.kv = SettingsStore(self.store.db)  # 推荐功能（lb.*）的设置，与 Web 状态同库
         self.base_dir = base_dir or base_download_dir()
@@ -60,12 +61,12 @@ class App:
         self.scheduler: Optional[Scheduler] = None
         # 推荐联动：全局任务锁（与现有下载队列共用）、运行记录/日志写 SQLite，文件日志在数据目录 logs/
         self.tm = TaskManager(self.store.db, log_dir=data_dir / "logs")
-        self.jobs = JobManager(self.store, self.config, self.base_dir,
+        self.jobs = JobManager(self.store, self.base_dir,
                                on_finish=lambda j: self.scheduler and self.scheduler.record_result(j),
                                task_lock=self.tm)
-        self.lb = LbService(db=self.store.db, kv=self.kv, tm=self.tm, store=self.store, config=self.config,
+        self.lb = LbService(db=self.store.db, kv=self.kv, tm=self.tm, store=self.store,
                             notify=self._bark_notify,
-                            request_delay=lambda: effective_request_delay(self.config, self.store.get()["settings"]))
+                            request_delay=lambda: effective_request_delay(self.store.get()["settings"]))
         self.scheduler = Scheduler(self.store, self.jobs)
         self.lb_scheduler = LbScheduler(self.lb, self.kv)      # 推荐联动的定时器（总开关关闭时什么都不触发）
         self._qr: Dict[str, float] = {}
@@ -76,7 +77,7 @@ class App:
 
     def _bark_notify(self, title: str, body: str) -> bool:
         from bark import BarkNotifier
-        return BarkNotifier(effective_bark_api(self.config, self.store.get()["settings"])).send_notification(title, body)
+        return BarkNotifier(effective_bark_api(self.store.get()["settings"])).send_notification(title, body)
 
     def start(self) -> None:
         # 上次进程被杀时遗留的状态：运行记录标为中断、「下载中」的歌复位为待处理
@@ -122,7 +123,7 @@ class App:
             "logged_in": True, "invalid": False,
             "uid": info["uid"], "nickname": info["nickname"], "avatar": info["avatar"],
             "is_vip": info["is_vip"],
-            "quality": effective_quality(self.config, settings, info["is_vip"]),
+            "quality": effective_quality(settings, info["is_vip"]),
             "mode": "VIP" if info["is_vip"] else "MP3",
         }
 
@@ -250,15 +251,11 @@ class App:
     def settings_view(self) -> Dict[str, Any]:
         state = self.store.get()
         s = state["settings"]
-        bark = effective_bark_api(self.config, s)
-        lib = effective_library(self.config, s)
+        bark = effective_bark_api(s)
+        lib = effective_library(s)
         use_lib = bool(s.get("use_library", True))
         return {
             "bark_api": bark,
-            "from_config": {  # 哪些项当前仍是沿用 config.yaml（页面保存后即变为页面设置）
-                "bark": s.get("bark_api") is None and bool(bark),
-                "library": not isinstance(s.get("library"), dict) and lib["type"] != "none",
-            },
             "download_source": "borrowed" if (s.get("download_source") == "borrowed"
                                               and (state.get("download_account") or {}).get("cookies")) else "self",
             "download_account": self.download_account_view(state),
@@ -273,22 +270,21 @@ class App:
                           "has_password": bool(lib["mysql"]["password"])},
             },
             "quality": s.get("quality") or "",
-            "config_quality": self.config.get("QUALITY_LEVEL", "lossless"),
-            "request_delay": effective_request_delay(self.config, s),
+            "request_delay": effective_request_delay(s),
             "qualities": [q.value for q in QualityLevel],
         }
 
     def library_test(self, payload: Dict[str, Any]) -> str:
         """用页面当前填写（密码留空则用已保存的）测试连接，不保存。"""
         s = self.store.get()["settings"]
-        lib = merge_library(effective_library(self.config, s), payload)
+        lib = merge_library(effective_library(s), payload)
         return test_library(lib)
 
     def settings_update(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         def apply(state):
             s = state["settings"]
             if "library" in payload and isinstance(payload["library"], dict):
-                s["library"] = merge_library(effective_library(self.config, s), payload["library"])
+                s["library"] = merge_library(effective_library(s), payload["library"])
                 # 页面上只保留"音乐库类型"一个控件（不使用=关闭），保存时把旧的 use_library 总开关复位，
                 # 避免旧数据里残留的 false 让选了类型却不生效
                 s["use_library"] = True
@@ -384,7 +380,7 @@ class App:
 
     def test_bark(self) -> bool:
         from bark import BarkNotifier
-        api = effective_bark_api(self.config, self.store.get()["settings"])
+        api = effective_bark_api(self.store.get()["settings"])
         if not api:
             raise ValueError("尚未设置 Bark 地址")
         return BarkNotifier(api).send_notification("云音乐下载", "Bark 通知测试成功")
@@ -547,6 +543,13 @@ class Handler(BaseHTTPRequestHandler):
                 return app.lb.cleanup_preview()
             if path == "/api/lb/love/preview":
                 return {"preview": app.lb.love_preview()}
+            if path == "/api/lb/love/unresolved":
+                return lb_manual.view(app.store.db, app.kv)
+            if path == "/api/lb/love/mb_search":
+                try:
+                    return {"results": mb_client.search_recordings(q("artist"), q("title"))}
+                except mb_client.MBError as e:
+                    raise ValueError(str(e))
             raise ApiError(404, "Not Found")
 
         body = self._body()
@@ -590,6 +593,11 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 raise ValueError("缺少条目编号")
             return lb_queries.item_action(app.store.db, item_id, str(body.get("action", "")), str(body.get("arg", "") or ""))
+        if path == "/api/lb/love/resolve":
+            return lb_manual.resolve(app.store.db, app.kv, str(body.get("id", "")), mbid=str(body.get("mbid", "") or ""),
+                                     ignore=bool(body.get("ignore")))
+        if path == "/api/lb/love/undo":
+            return lb_manual.undo(app.store.db, str(body.get("na", "")), str(body.get("nt", "")))
         if path == "/api/lb/test":
             return app.lb_test(str(body.get("target", "")), body.get("settings") or {})
         if path == "/api/schedule/save":
@@ -611,7 +619,7 @@ def serve(host: str, port: int, app: App) -> ThreadingHTTPServer:
 def main() -> None:
     setup_logger(logging.INFO)
     app = App()
-    level = str(app.config.get("LEVEL", "INFO")).upper()
+    level = str(os.environ.get("LOG_LEVEL", "INFO")).upper()
     logging.getLogger().setLevel(getattr(logging, level, logging.INFO))
     host = os.environ.get("WEB_HOST", "0.0.0.0")
     port = int(os.environ.get("WEB_PORT", "8080"))

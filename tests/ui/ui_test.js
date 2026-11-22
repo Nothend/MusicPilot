@@ -103,6 +103,18 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('红心预览对话框显示真实跑出的结果', $('loveDlg').hasAttribute('open') && txt('loveMeta').includes('将提交 1 首') && txt('loveList').includes('红心歌'), txt('loveMeta'));
   check('预览里标明 MBID 来源', txt('loveList').includes('Navidrome 标签'), txt('loveList'));
   $('loveDlg').close();
+  // ---- 解析不出 MBID 的红心：人工处理
+  await w.eval('showUnresolved()'); await sleep(700);
+  check('未解析对话框列出解析不出的歌和原因', $('unresDlg').hasAttribute('open') && txt('unresList').includes('歌手乙 - 野生歌') && txt('unresList').includes('没查到'), txt('unresList'));
+  check('按钮上显示待处理数量', txt('unresN').includes('1'), txt('unresN'));
+  await w.eval('unresSearch(0)'); await sleep(900);                       // 页面冒烟环境禁止外网：搜索失败时要有可读提示，且仍可粘贴
+  check('搜索失败给出提示并保留粘贴入口', txt('unresBox0').includes('MusicBrainz') && !!d.getElementById('unresMbid0'), txt('unresBox0'));
+  d.getElementById('unresMbid0').value = 'https://musicbrainz.org/recording/11111111-2222-3333-4444-555555555555';
+  await w.eval('unresPaste2(0)'); await sleep(700);
+  check('粘贴链接后自动提取 MBID 并移入「已手动处理」', txt('unresList').includes('没有待处理') && txt('unresDoneT').includes('1') && txt('unresDoneL').includes('11111111-2222'), txt('unresDoneL'));
+  await w.eval('unresUndo(0)'); await sleep(700);
+  check('撤销后手动记录消失', txt('unresDoneT').includes('0'), txt('unresDoneT'));
+  $('unresDlg').close();
   // 清理：没有过期的 → toast
   await w.eval('actCleanup()'); await sleep(500);
   check('没有可清理时给出提示', txt('toast').includes('没有需要清理'), txt('toast'));

@@ -257,7 +257,23 @@ def _v7(conn: sqlite3.Connection) -> None:
         )""")
 
 
-MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7]
+def _v8(conn: sqlite3.Connection) -> None:
+    """v8：红心同步的「解析不出 MBID」可人工处理。
+
+    mbid_cache 新增列：reason（no_result=LB 没查到 | mismatch=查到了但歌手/歌名对不上）、cand（对不上时 LB 返回了什么）、
+    manual（1=用户手动指定的 MBID，永久有效，优先于一切自动结果）、ignored（1=用户选择「忽略这首」，不再提示、不提交）、
+    artist/title（手动行的展示名，便于在页面上撤销）。
+    """
+    for ddl in ("ALTER TABLE mbid_cache ADD COLUMN reason  TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE mbid_cache ADD COLUMN cand    TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE mbid_cache ADD COLUMN manual  INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE mbid_cache ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE mbid_cache ADD COLUMN artist  TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE mbid_cache ADD COLUMN title   TEXT NOT NULL DEFAULT ''"):
+        conn.execute(ddl)
+
+
+MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8]
 
 
 class DatabaseVersionError(RuntimeError):

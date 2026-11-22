@@ -9,6 +9,7 @@
 
 import logging
 import time
+import requests
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
@@ -21,7 +22,7 @@ import lb_queries
 import lb_settings
 from db import Database
 from lb_adapter import NeteaseAdapter
-from lb_client import ListenBrainzClient
+from lb_client import LBError, ListenBrainzClient
 from local_index import sync_index
 from nd_client import NavidromeClient
 from settings_store import SettingsStore
@@ -34,13 +35,14 @@ KINDS = ("sync", "promote", "cleanup", "reindex", "love", "dedup")
 GATED = ("sync", "promote", "cleanup", "dedup")
 LABELS = {"sync": "推荐同步", "promote": "红心转正", "cleanup": "过期清理", "reindex": "同步索引", "love": "红心同步", "dedup": "重复去重"}
 LOVE_PREVIEW_KEY = "lb.love_preview"
+LOVE_UNRESOLVED_KEY = "lb.love_unresolved"
 
 
 class NotReady(ValueError):
     """配置不完整或总开关关闭：页面直接显示 message。"""
 
 
-def default_adapter_factory(store, config, settings: Dict[str, Any], request_delay: float):
+def default_adapter_factory(store, settings: Dict[str, Any], request_delay: float):
     """用现有 Web 的网易云账号装配下载渠道：登录账号是 VIP 就直接用；否则要有效的借用 VIP 账号。推荐联动只要无损。"""
     from downloader import SongDownloader
     from web_common import download_account_of, effective_quality
@@ -67,25 +69,27 @@ def default_adapter_factory(store, config, settings: Dict[str, Any], request_del
         if not binfo["is_vip"]:
             raise NotReady("借用账号已不是黑胶 VIP，请更换")
         cookies, api = borrowed["cookies"], bw.api
-    quality = effective_quality(config, state["settings"], True)
+    quality = effective_quality(state["settings"], True)
     return NeteaseAdapter(cookies, SongDownloader(cookies, api), quality, request_delay=request_delay)
 
 
 class LbService:
-    def __init__(self, *, db: Database, kv: SettingsStore, tm: TaskManager, store=None, config=None,
+    def __init__(self, *, db: Database, kv: SettingsStore, tm: TaskManager, store=None,
                  notify: Optional[Callable[[str, str], Any]] = None,
                  lb_factory: Callable[[Dict[str, Any]], Any] = None,
                  nd_factory: Callable[[Dict[str, Any]], Any] = None,
                  adapter_factory: Optional[Callable[[Dict[str, Any], float], Any]] = None,
                  request_delay: Callable[[], float] = lambda: 2.0,
                  now: Callable[[], datetime] = datetime.now, sleep: Callable[[float], None] = time.sleep):
-        self.db, self.kv, self.tm, self.store, self.config = db, kv, tm, store, config
+        self.db, self.kv, self.tm, self.store = db, kv, tm, store
         self.notify = notify or (lambda title, body: None)
         self.lb_factory = lb_factory or (lambda s: ListenBrainzClient(s["listenbrainz"]["token"], s["listenbrainz"]["username"]))
         self.nd_factory = nd_factory or (lambda s: NavidromeClient(s["navidrome"]["url"], s["navidrome"]["user"], s["navidrome"]["password"]))
-        self.adapter_factory = adapter_factory or (lambda s, delay: default_adapter_factory(self.store, self.config, s, delay))
+        self.adapter_factory = adapter_factory or (lambda s, delay: default_adapter_factory(self.store, s, delay))
         self.request_delay = request_delay
         self.now, self.sleep = now, sleep
+        # 定时触发的同步任务因网络类错误失败时调用：(kind, types, attempt) -> 是否已安排自动重试
+        self.on_failed: Optional[Callable[[str, Optional[List[str]], int], bool]] = None
 
     # ------------------------------------------------------------ 设置与门禁
     def settings(self) -> Dict[str, Any]:
@@ -109,7 +113,8 @@ class LbService:
 
     # ------------------------------------------------------------ 启动任务
     def start(self, kind: str, *, trigger: str = "manual", types: Optional[List[str]] = None,
-              scan: bool = False, dry_run: bool = False, params: Optional[Dict[str, Any]] = None) -> int:
+              scan: bool = False, dry_run: bool = False, params: Optional[Dict[str, Any]] = None,
+              attempt: int = 1) -> int:
         """启动后台任务，返回运行 id。已有任务在跑 → TaskBusy；不满足条件 → NotReady（都是 ValueError 的子类/页面可读）。"""
         s = self.settings()
         self.check_ready(kind, s, dry_run=dry_run)
@@ -124,7 +129,7 @@ class LbService:
             self._execute(kind, s, h, types=types, scan=scan, dry_run=dry_run, params=params or {})
 
         return self.tm.run_async(kind + ("_preview" if kind == "love" and dry_run else ""), trigger, body,
-                                 on_done=lambda h, err: self._after(label, h, err))
+                                 on_done=lambda h, err: self._after(label, h, err, kind=kind, trigger=trigger, types=types, attempt=attempt))
 
     def _execute(self, kind: str, s: Dict[str, Any], h: RunHandle, *, types, scan, dry_run, params=None) -> None:
         nd = self.nd_factory(s)
@@ -152,15 +157,36 @@ class LbService:
                   f"试听库 {st['discovery']['total']} 首")
         elif kind == "love":
             deps = lb_love.LoveDeps(self.db, s, self.lb_factory(s), nd, h, dry_run=dry_run, now=self.now)
-            lb_love.run_love_sync(deps)
+            try:
+                lb_love.run_love_sync(deps)
+            finally:                             # 解析不出 MBID 的清单留给页面人工处理（中途失败时也保留已收集的）
+                if deps.unresolved or h.stats.get("starred"):
+                    self.kv.set(LOVE_UNRESOLVED_KEY, {"at": self.now().isoformat(timespec="seconds"), "items": deps.unresolved})
             if dry_run:                          # 预览结果存起来，页面随时可看（可能是一份很长的清单）
                 self.kv.set(LOVE_PREVIEW_KEY, {"at": self.now().isoformat(timespec="seconds"), "plan": deps.plan,
                                                "stats": dict(h.stats)})
 
     # ------------------------------------------------------------ 结束后的通知
-    def _after(self, label: str, h: RunHandle, err: Optional[BaseException]) -> None:
+    @staticmethod
+    def is_transient(err: BaseException) -> bool:
+        """网络抖动类错误（值得稍后自动重试）：LB 超时/限流/5xx/连接失败；配置错误、Token 无效不算。"""
+        if isinstance(err, LBError):
+            return err.status is None or err.status == 429 or err.status >= 500
+        return isinstance(err, requests.RequestException)
+
+    def _after(self, label: str, h: RunHandle, err: Optional[BaseException], *, kind: str = "",
+               trigger: str = "manual", types: Optional[List[str]] = None, attempt: int = 1) -> None:
+        if err is not None and trigger == "schedule" and kind == "sync" and self.on_failed and self.is_transient(err):
+            try:
+                if self.on_failed(kind, types, attempt):     # 已安排自动重试：这次先不打扰，最终失败才通知
+                    logger.warning(f"{label}失败（{type(err).__name__}），已安排自动重试（第 {attempt} 次失败）")
+                    return
+            except Exception as e:
+                logger.error(f"安排自动重试失败: {e}")
         msg = self.summarize(label, h, err)
         if msg:
+            if attempt > 1 and err is not None:
+                msg += f"（已自动重试 {attempt - 1} 次仍失败）"
             try:
                 self.notify(f"推荐联动：{label}", msg)
             except Exception as e:

@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from bark import BarkNotifier
-from config import Config
 from downloader import DownloadException, SongDownloader
 from utils import quality_display_name
 from web_common import (build_library_checker, download_account_of, effective_bark_api, effective_quality,
@@ -47,11 +46,10 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, store: WebStore, config: Config, base_dir: Path, on_finish=None, task_lock=None):
+    def __init__(self, store: WebStore, base_dir: Path, on_finish=None, task_lock=None):
         self.store = store
         # 与推荐联动任务共用的全局锁（TaskManager）：轮到本队列的任务时，若有推荐任务在跑就等它结束再开始
         self.task_lock = task_lock
-        self.config = config
         self.base_dir = base_dir
         self.on_finish = on_finish  # 回调(job_snapshot)：定时任务据此记录最近结果
         self._lock = threading.RLock()
@@ -288,7 +286,7 @@ class JobManager:
 
     def _notify(self, title: str, body: str) -> None:
         settings = self.store.get()["settings"]
-        BarkNotifier(effective_bark_api(self.config, settings)).send_notification(title, body)
+        BarkNotifier(effective_bark_api(settings)).send_notification(title, body)
 
 
     def _run(self, job: Job) -> None:
@@ -369,7 +367,7 @@ class JobManager:
                 # （借用账号的 cookie 不被使用，也少一份被风控的风险）
                 job.log("登录账号已是黑胶 VIP，无需借用账号，直接用登录账号下载")
 
-        quality = effective_quality(self.config, settings, is_vip)
+        quality = effective_quality(settings, is_vip)
         job.log(f"{who}，音质：{quality_display_name(quality)}")
 
         try:
@@ -406,13 +404,13 @@ class JobManager:
 
         checker = None
         try:
-            checker = build_library_checker(self.config, settings)
+            checker = build_library_checker(settings)
         except Exception as e:
             job.log(f"音乐库检查不可用，仅做本地去重：{e}")
         if checker is not None:
             job.log("已启用音乐库去重")
 
-        delay = effective_request_delay(self.config, settings)
+        delay = effective_request_delay(settings)
         counts = d["counts"]
         try:
             for track in tracks:

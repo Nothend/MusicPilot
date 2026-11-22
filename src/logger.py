@@ -11,7 +11,7 @@ def setup_logger(level: int = logging.INFO) -> logging.Logger:
     if logger.handlers:
         logger.handlers.clear()
     
-    # 2. 解析日志目录（绝对路径，避免 cron 下工作目录漂移把日志写到挂载卷之外）
+    # 2. 解析日志目录（绝对路径，避免工作目录漂移把日志写到挂载卷之外）
     #    Docker 环境固定用挂载卷 /app/logs；本地用项目根下的 logs/（与下载目录同一套判定逻辑）
     if os.path.exists("/.dockerenv"):
         log_dir = "/app/logs"

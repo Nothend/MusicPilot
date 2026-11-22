@@ -6,7 +6,6 @@ import pytest
 
 from db import Database
 from task_manager import TaskBusy, TaskManager
-from web_common import load_config_or_empty
 from web_jobs import JobManager
 from web_store import WebStore
 
@@ -24,7 +23,7 @@ def wait_for(cond, timeout=5):
 def setup(tmp_path):
     store = WebStore(tmp_path / "web_state.json")
     tm = TaskManager(store.db)
-    jm = JobManager(store, load_config_or_empty(tmp_path), tmp_path / "dl", task_lock=tm)
+    jm = JobManager(store, tmp_path / "dl", task_lock=tm)
     (tmp_path / "dl").mkdir()
     ran = []
     def fake_run(job):
@@ -64,7 +63,7 @@ def test_recommend_task_is_rejected_while_a_download_job_is_running(setup):
 
 def test_job_manager_without_task_lock_is_unchanged(tmp_path):
     store = WebStore(tmp_path / "web_state.json")
-    jm = JobManager(store, load_config_or_empty(tmp_path), tmp_path / "dl")
+    jm = JobManager(store, tmp_path / "dl")
     (tmp_path / "dl").mkdir()
     ran = []
     jm._run = lambda job: (ran.append(1), jm._finish(job, "done", "ok"))

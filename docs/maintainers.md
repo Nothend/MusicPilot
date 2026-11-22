@@ -39,8 +39,8 @@ ls -lh dist/
 
 ```bash
 mkdir -p /tmp/amd-run/data /tmp/amd-run/downloads
-docker run -d --name amd-test -p 15119:5119 -e WEB_ENABLE=true -e WEB_PORT=5119 -e WEB_PASSWORD=test \
-  -e CRON_ENABLE=false -v /tmp/amd-run/data:/app/data -v /tmp/amd-run/downloads:/app/downloads \
+docker run -d --name amd-test -p 15119:5119 -e WEB_PORT=5119 -e WEB_PASSWORD=test \
+  -v /tmp/amd-run/data:/app/data -v /tmp/amd-run/downloads:/app/downloads \
   musicpilot:$VERSION
 sleep 4 && docker logs amd-test | tail -3
 curl -s -o /dev/null -w '无密码: %{http_code}\n' http://127.0.0.1:15119/          # 期望 401
@@ -103,5 +103,5 @@ python3 -m venv venv && ./venv/bin/pip install -r requirements-dev.txt     # 运
 ```
 
 - 项目是扁平导入：测试里 `tests/conftest.py` 已把 `src/` 放进路径；手动运行 Web 服务要 `cd src && python web_server.py`。
-- **测试绝不能碰真实服务**：`conftest.py` 里有两道自动生效的保护——**网络闸门**（任何访问非本机地址的 DNS/连接都会让测试失败，因为 Bark 之类的代码会吞掉自己的异常）和**配置隔离**（`CONFIG_PATH` 指向临时空配置，避免读到真实的 `config.yaml`）。曾经因为没隔离，跑一次测试就给手机推送了上百条真实 Bark 通知。新写的、会创建真实 `App` 的脚本（例如 `tests/ui/ui_server.py`）也必须这样隔离。
+- **测试绝不能碰真实服务**：`conftest.py` 里有自动生效的**网络闸门**（任何访问非本机地址的 DNS/连接都会让测试失败，因为 Bark 之类的代码会吞掉自己的异常）。曾经因为 `App` 读到真实 `config.yaml` 里的 Bark 地址，跑一次测试就给手机推送了上百条真实通知（现在已没有配置文件，设置只来自页面/数据库，测试用临时数据目录）。新写的、会创建真实 `App` 的脚本（例如 `tests/ui/ui_server.py`）也必须这样隔离。
 - 页面改动后建议跑一遍页面冒烟测试（jsdom 加载真实页面 + 真实后端 + 假的外部系统，会点遍各个子页面和按钮并捕获脚本错误），见 `tests/ui/README.md`。

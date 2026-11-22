@@ -1,7 +1,7 @@
 """测试自身的安全网 + Bark 通知的接线。
 
 背景：曾因测试读到真实 config.yaml 里的 BARK_API，每跑一次测试就给用户手机推送一堆通知。
-这里保证：① 测试访问不到外部网络；② 测试读不到真实配置；③ 通知「该发时发、发给谁、发什么」是对的（用替身验证，不联网）。
+这里保证：① 测试访问不到外部网络；② 程序不再读取任何 config.yaml；③ 通知「该发时发、发给谁、发什么」是对的（用替身验证，不联网）。
 """
 import logging
 import socket
@@ -13,7 +13,6 @@ import requests
 
 import lb_settings
 import web_server
-from config import Config
 from test_lb_pipeline import lbtrack
 from test_web_lb_api import Api
 
@@ -75,22 +74,31 @@ def test_guard_fails_a_test_even_when_the_offending_code_swallows_the_error(tmp_
     assert "ERROR test_swallow.py::test_swallows" in r.stdout and "外部网络" in r.stdout
 
 
-# ---------------------------------------------------------------- 配置隔离
-def test_tests_never_read_the_real_config_yaml():
-    cfg = Config()
-    assert cfg.config == {} and cfg.config_path != REPO / "config.yaml"
-    assert cfg.get("BARK_API") is None and cfg.get("cookie") is None
-
-
-def test_isolated_config_file_really_exists_so_config_does_not_fall_back_to_cwd(tmp_path, monkeypatch):
-    monkeypatch.chdir(REPO)                        # cwd 下有真实 config.yaml：若隔离文件不存在，Config 会改去读它
-    assert Config().config_path.exists() and Config().config_path.parent != REPO
+# ---------------------------------------------------------------- 不再读取 config.yaml
+def test_stray_config_yaml_is_never_read(tmp_path, monkeypatch):
+    """回归：config.yaml 已整体移除。即使 cwd / 数据目录 / 环境变量指向的位置有一份带 BARK_API 的文件，也绝不能生效。"""
+    stray = "BARK_API: https://bark.test/SECRETKEY/\nQUALITY_LEVEL: hires\nREQUEST_DELAY: 9\n"
+    for d in (REPO, tmp_path, tmp_path / "data"):
+        d.mkdir(exist_ok=True)
+    (tmp_path / "config.yaml").write_text(stray, encoding="utf-8")
+    (tmp_path / "data" / "config.yaml").write_text(stray, encoding="utf-8")
+    monkeypatch.setenv("CONFIG_PATH", str(tmp_path / "config.yaml"))
+    monkeypatch.chdir(tmp_path)
+    api = Api(tmp_path, monkeypatch)
+    try:
+        s = api.app.store.get()["settings"]
+        assert web_server.effective_bark_api(s) == ""
+        assert web_server.effective_quality(s, True) == "lossless"
+        assert web_server.effective_request_delay(s) == 0.5
+        assert api.get("/api/state").json()["settings"]["bark_api"] == ""
+    finally:
+        api.close()
 
 
 def test_app_built_in_tests_has_no_bark_url(tmp_path, monkeypatch):
     api = Api(tmp_path, monkeypatch)
     try:
-        assert web_server.effective_bark_api(api.app.config, api.app.store.get()["settings"]) in ("", None)
+        assert web_server.effective_bark_api(api.app.store.get()["settings"]) == ""
     finally:
         api.close()
 
@@ -111,12 +119,11 @@ class FakeRequests:
 
 
 def make_api_with_bark(tmp_path, monkeypatch, url="https://bark.test/SECRETKEY/"):
-    cfg = tmp_path / "bark-config.yaml"
-    cfg.write_text(f"BARK_API: {url}\n", encoding="utf-8")
-    monkeypatch.setenv("CONFIG_PATH", str(cfg))
     fake = FakeRequests()
     monkeypatch.setattr("bark.requests", fake)
-    return Api(tmp_path, monkeypatch), fake
+    api = Api(tmp_path, monkeypatch)
+    api.app.store.update(lambda st: st["settings"].update(bark_api=url))      # Bark 地址只来自页面设置
+    return api, fake
 
 
 def test_a_sync_with_real_changes_sends_exactly_one_bark_with_the_summary(tmp_path, monkeypatch):
