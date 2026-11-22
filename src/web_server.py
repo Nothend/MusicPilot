@@ -521,6 +521,8 @@ class Handler(BaseHTTPRequestHandler):
                 return app.lb_settings_view()
             if path == "/api/lb/dashboard":
                 return app.lb.dashboard()
+            if path == "/api/lb/todo":
+                return lb_queries.todo(app.store.db, app.kv, app.lb.settings())
             if path == "/api/lb/schedule":
                 return {"upcoming": app.lb_scheduler.upcoming(), "timezone": os.environ.get("TZ") or time.tzname[0]}
             if path == "/api/lb/batches":

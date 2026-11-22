@@ -106,6 +106,25 @@ def test_mb_search_is_proxied_and_errors_are_400(api, monkeypatch):
     assert r.status_code == 400 and "限流" in r.json()["error"]
 
 
+def test_todo_counts_everything_waiting_for_the_user(api):
+    db = api.app.store.db
+    assert api.get("/api/lb/todo").json() == {"enabled": True, "multiple": 0, "dup": 0, "love_unresolved": 0, "total": 0,
+                                              "multiple_batch": None, "dup_batch": None}
+    tr = lambda n: {"recording_mbid": f"m{n}", "artist": "A", "title": f"T{n}", "album": "", "duration_ms": 1, "artists": []}
+    bid = lb_repo.create_batch(db, "weekly_jams", {"mbid": "p", "title": "t", "date": "d"}, {"tracks": [tr(1), tr(2)]})
+    i1, i2 = [i["id"] for i in lb_repo.items_of_batch(db, bid)]
+    lb_repo.set_state(db, i1, ST.MULTIPLE_MATCH)
+    with db.transaction() as c:                                          # 一个还在主库里的疑似重复文件 + 一个已不在主库的
+        for sid, lib in (("m-main", "main"), ("m-gone", "discovery")):
+            c.execute("INSERT INTO local_files(nd_song_id, library, indexed_at) VALUES(?,?,'2026-11-22T00:00:00')", (sid, lib))
+    lb_repo.add_dup_suspects(db, i2, [("m-main", "near", 1.0), ("m-gone", "near", 1.0)])
+    api.app.kv.set("lb.love_unresolved", {"at": "t", "items": [{"id": "s1"}, {"id": "s2"}, {"id": "s3"}]})
+    assert api.get("/api/lb/todo").json() == {"enabled": True, "multiple": 1, "dup": 1, "love_unresolved": 3, "total": 5,
+                                              "multiple_batch": {"id": bid, "type": "weekly_jams"}, "dup_batch": {"id": bid, "type": "weekly_jams"}}
+    lb_repo.dismiss_dup_suspects(db, [i2])                               # 选了「两份都留」后不再算待处理
+    assert api.get("/api/lb/todo").json()["dup"] == 0
+
+
 def test_bad_parameters_are_400_not_500(api):
     assert api.get("/api/lb/items").status_code == 400
     assert api.get("/api/lb/items?batch=x").status_code == 400
@@ -209,7 +228,7 @@ def test_basic_auth_protects_every_new_endpoint(tmp_path, monkeypatch):
     monkeypatch.setenv("WEB_PASSWORD", "secret")
     try:
         for path in ("/api/lb/dashboard", "/api/lb/runs", "/api/lb/items?batch=1", "/api/lb/cleanup/preview", "/api/lb/love/preview",
-                     "/api/lb/love/unresolved", "/api/lb/love/mb_search?title=x"):
+                     "/api/lb/love/unresolved", "/api/lb/love/mb_search?title=x", "/api/lb/todo"):
             assert a.get(path).status_code == 401
         for path in ("/api/lb/love/resolve", "/api/lb/love/undo"):
             assert requests.post(a.base + path, json={}, timeout=10).status_code == 401

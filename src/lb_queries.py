@@ -58,6 +58,30 @@ def dashboard(db: Database, settings: Dict[str, Any], current_task: Optional[Dic
     }
 
 
+def todo(db: Database, kv, settings: Dict[str, Any]) -> Dict[str, Any]:
+    """需要用户人工处理的事项数量（页面「需要你处理」卡片与「推荐」标签上的角标）。
+
+    multiple    本地有多个难以区分的候选，等你选择是哪一首
+    dup         试听库歌曲与主库文件疑似重复，等你选择保留哪一份（只算尚未处理、主库文件还在的）
+    love_unresolved  红心同步解析不出可信 MBID 的歌（最近一次同步/预览的快照）
+    """
+    with db.lock:
+        multiple = db.conn.execute("SELECT COUNT(*) FROM recommendation_items WHERE state=?", (ST.MULTIPLE_MATCH,)).fetchone()[0]
+        dup_sql = ("FROM dup_suspects d JOIN local_files f ON f.nd_song_id=d.main_nd_song_id "
+                   "JOIN recommendation_items i ON i.id=d.item_id JOIN recommendation_batches b ON b.id=i.batch_id "
+                   "WHERE d.dismissed=0 AND f.library='main'")
+        dup = db.conn.execute("SELECT COUNT(DISTINCT d.item_id) " + dup_sql).fetchone()[0]
+        dup_b = db.conn.execute("SELECT b.id, b.type " + dup_sql + " ORDER BY b.id DESC LIMIT 1").fetchone()
+        mul_b = db.conn.execute(
+            "SELECT b.id, b.type FROM recommendation_items i JOIN recommendation_batches b ON b.id=i.batch_id "
+            "WHERE i.state=? ORDER BY b.id DESC LIMIT 1", (ST.MULTIPLE_MATCH,)).fetchone()
+    unresolved = len((kv.get("lb.love_unresolved") or {}).get("items", []))
+    return {"enabled": settings["enabled"], "multiple": multiple, "dup": dup, "love_unresolved": unresolved,
+            "total": multiple + dup + unresolved,
+            # 点「去处理」时直达最新的那一批（没有则为 None）
+            "multiple_batch": dict(mul_b) if mul_b else None, "dup_batch": dict(dup_b) if dup_b else None}
+
+
 def _run_row(r) -> Optional[Dict[str, Any]]:
     if r is None:
         return None

@@ -25,6 +25,24 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('登录态下主界面可见', !$('main').classList.contains('hide'));
   check('导航里有「推荐」标签', !!d.querySelector('#nav button[data-tab="rec"]'));
 
+  // ---- 页面结构：推荐在最前并作为默认页；下载与定时任务合并；待处理卡片与角标
+  const navTabs = [...d.querySelectorAll('#nav button')].map(b => b.dataset.tab);
+  check('导航顺序：推荐 / 网易云下载 / 任务记录 / 设置', navTabs.join(',') === 'rec,dl,jobs,set', navTabs.join(','));
+  check('推荐联动已启用时，默认打开「推荐」', $('p-rec').classList.contains('on') && !$('p-dl').classList.contains('on'));
+  await sleep(600);
+  check('「需要你处理」卡片列出待选择候选', !$('todoCard').classList.contains('hide') && txt('todoList').includes('待选择'), txt('todoList'));
+  check('「推荐」标签上有待处理角标', /\d/.test(txt('navRec')), txt('navRec'));
+  await w.eval("todoGo('multiple')"); await sleep(900);
+  check('点「去选择」直达列表并筛到「待选择」', !$('rv-list').classList.contains('hide') && txt('lstStates').includes('待选择') && $('lstItems').children.length >= 1 && !txt('lstStates').includes('下载失败'), txt('lstStates'));
+  await w.eval("recShow('dash')");
+  w.showTab('dl'); await sleep(300);
+  check('「网易云下载」默认是手动下载', !$('dv-manual').classList.contains('hide') && $('dv-auto').classList.contains('hide'));
+  d.querySelector('#dlNav button[data-v="auto"]').click(); await sleep(300);
+  check('切到「定时任务」子页', $('dv-manual').classList.contains('hide') && !$('dv-auto').classList.contains('hide') && !!$('schedList'));
+  w.showTab('auto'); await sleep(200);
+  check('旧链接 #auto 仍能打开（定时任务）', $('p-dl').classList.contains('on') && !$('dv-auto').classList.contains('hide'));
+  d.querySelector('#dlNav button[data-v="manual"]').click();
+
   // ---- 概览
   w.showTab('rec'); await sleep(900);
   check('概览子页可见', !$('rv-dash').classList.contains('hide') && $('rv-list').classList.contains('hide'));
@@ -103,6 +121,12 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('红心预览对话框显示真实跑出的结果', $('loveDlg').hasAttribute('open') && txt('loveMeta').includes('将提交 1 首') && txt('loveList').includes('红心歌'), txt('loveMeta'));
   check('预览里标明 MBID 来源', txt('loveList').includes('Navidrome 标签'), txt('loveList'));
   $('loveDlg').close();
+  // ---- 任务记录：统计项都是中文且有说明；推荐联动任务在下载任务上面
+  const stx = await w.eval("statsText({dedup_replaced:1,dup_suspects:1,via_item:1,via_lookup:1,via_navidrome:1,via_manual:1,unresolved:1,moved:1})");
+  check('统计项没有英文键名', !/[a-z]_[a-z]|via|dedup|dup_/.test(stx), stx);
+  const sth = await w.eval("statsHtml({dup_suspects:2})");
+  check('统计项带悬停说明', sth.includes('title="') && sth.includes('选择保留哪一份'), sth);
+  check('「任务记录」里推荐联动任务排在下载任务上面', !!(d.getElementById('runsSec').compareDocumentPosition(d.getElementById('jobsSec')) & 4), '');
   // ---- 解析不出 MBID 的红心：人工处理
   await w.eval('showUnresolved()'); await sleep(700);
   check('未解析对话框列出解析不出的歌和原因', $('unresDlg').hasAttribute('open') && txt('unresList').includes('歌手乙 - 野生歌') && txt('unresList').includes('没查到'), txt('unresList'));
@@ -146,6 +170,11 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('推荐页不再有「任务」「设置」子页', ![...d.querySelectorAll('#recNav button')].some(b => ['runs', 'set'].includes(b.dataset.v)));
   check('推荐策略里可改 Navidrome 歌单名并带含义说明', $('pn-daily').value === 'LB Daily Jams {date}' && txt('stratRows').includes('探索新口味'), $('pn-daily').value);
   check('红心同步卡片存在', !!$('cLbLove'));
+  check('设置页分三组：账号与下载 / 推荐联动 / 通知（另有术语说明）', ['sgAcct', 'lbSetBox', 'sgNotify', 'sgGloss'].every(i => $(i) && $(i).tagName === 'DETAILS'), '');
+  check('账号与下载、通知默认展开，推荐联动默认折叠', $('sgAcct').open && $('sgNotify').open && !$('lbSetBox').open);
+  check('各设置项落在正确的分组里', $('sgAcct').contains($('qSel')) && $('sgAcct').contains($('libType')) && $('sgAcct').contains($('dlSrc')) && $('sgNotify').contains($('bark')) && $('lbSetBox').contains($('lbUser')));
+  check('术语说明包含主库/试听库/转正/MBID', ['主库', '试听库', '转正', 'MBID'].every(t => txt('sgGloss').includes(t)), '');
+
 
   console.log(logs.join('\n'));
   console.log('\n脚本错误数:', errors.length); errors.forEach(e => console.log('  ' + e));
