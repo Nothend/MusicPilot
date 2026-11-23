@@ -140,6 +140,11 @@ class LbService:
         s = self.settings()
         self.check_ready(kind, s, dry_run=dry_run)
         label = LABELS[kind] + ("（预览）" if kind == "love" and dry_run else "")
+        if kind == "sync":                                   # params.download：None = 按设置「获取推荐后自动下载」；True/False = 明确指定
+            p = dict(params or {})
+            if p.get("download") is None:
+                p["download"] = bool(s["auto_download"])
+            params = p
         if kind == "dedup":                                  # 先同步校验，错误立刻回给页面
             p = params or {}
             p["main_id"] = lb_dedup.validate(self.db, int(p.get("item_id") or 0), str(p.get("choice", "")),
@@ -158,8 +163,9 @@ class LbService:
         return build_library_checker(self.store.get()["settings"]) if self.store is not None else None
 
     def _execute(self, kind: str, s: Dict[str, Any], h: RunHandle, *, types, scan, dry_run, params=None) -> None:
+        p = params or {}
         if kind == "sync" and s["mode"] == "folder":
-            return self._execute_folder_sync(s, h, types)
+            return self._execute_folder_sync(s, h, types, p)
         nd = self.nd_factory(s)
         if kind == "sync":
             delay = self.request_delay()
@@ -167,8 +173,8 @@ class LbService:
             from_lb = s["source"] == "listenbrainz"
             lb_pipeline.run_sync(lb_pipeline.SyncDeps(
                 self.db, s, self.lb_factory(s) if from_lb else None, nd, adapter, h, request_delay=delay,
-                sleep=self.sleep, now=self.now, types=types,
-                netease_daily=None if from_lb else self.netease_factory()))
+                sleep=self.sleep, now=self.now, types=types, download=bool(p.get("download", True)),
+                only_items=p.get("item_ids"), netease_daily=None if from_lb else self.netease_factory()))
         elif kind == "promote":
             lb_promote.run_promote(lb_promote.PromoteDeps(self.db, s, nd, h, now=self.now))
         elif kind == "dedup":
@@ -197,7 +203,7 @@ class LbService:
                 self.kv.set(LOVE_PREVIEW_KEY, {"at": self.now().isoformat(timespec="seconds"), "plan": deps.plan,
                                                "stats": dict(h.stats)})
 
-    def _execute_folder_sync(self, s: Dict[str, Any], h: RunHandle, types) -> None:
+    def _execute_folder_sync(self, s: Dict[str, Any], h: RunHandle, types, p: Dict[str, Any]) -> None:
         delay = self.request_delay()
         adapter = self.adapter_factory(s, delay)
         from_lb = s["source"] == "listenbrainz"
@@ -210,6 +216,7 @@ class LbService:
             lb_pipeline.run_sync(lb_pipeline.SyncDeps(
                 self.db, s, self.lb_factory(s) if from_lb else None, None, adapter, h, request_delay=delay,
                 sleep=self.sleep, now=self.now, types=types, library_checker=checker,
+                download=bool(p.get("download", True)), only_items=p.get("item_ids"),
                 netease_daily=None if from_lb else self.netease_factory()))
         finally:
             if checker is not None:

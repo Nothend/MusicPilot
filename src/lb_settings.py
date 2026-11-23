@@ -58,6 +58,9 @@ TRASH_DIRNAME = ".trash"       # discovery 内的软删除目录
 
 def defaults() -> Dict[str, Any]:
     return {
+        # 获取推荐后是否自动下载。默认关：推荐是主、下载是辅——只获取推荐歌单并与本地比对，要下载的在推荐歌单里手动点「下载」
+        # （升级前已保存过设置的安装保持原来的「自动下载」，见 load()）
+        "auto_download": False,
         "mode": DEFAULT_MODE,       # 下载方式（MODES 的 key）：folder 时不连接 Navidrome，没有试听库/转正/清理/红心同步
         "channel": DEFAULT_CHANNEL, # 下载渠道（CHANNELS 的 key）
         "source": DEFAULT_SOURCE,   # 推荐来源（SOURCES 的 key）：决定「推荐」页显示哪些列表、定时同步哪些
@@ -116,6 +119,8 @@ def load(raw: Any) -> Dict[str, Any]:
             s["source"] = LEGACY_SOURCE
         if "mode" not in raw:
             s["mode"] = LEGACY_MODE
+        if "auto_download" not in raw:
+            s["auto_download"] = True       # 旧版推荐同步总是顺带下载
         if raw.get("enabled") is False:
             # 旧版有一个「推荐联动总开关」，关着时同步/转正/清理（会删文件）/红心同步一律不跑。新版去掉了这个开关（选了推荐来源就是要用），
             # 为了让「原本关着」的安装升级后仍然什么都不自动做：把会自动运行的各项关掉（页面上可见，需要时自己勾回来）。
@@ -208,6 +213,8 @@ def _folder_id(v: Any, name: str) -> Optional[int]:
 def apply(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
     """把页面提交的（可能只含部分分组的）数据并入当前设置并校验，返回新设置；出错抛 ValueError。"""
     s = copy.deepcopy(current)
+    if "auto_download" in payload:
+        s["auto_download"] = _bool(payload["auto_download"])
     if "mode" in payload:
         m = _str(payload["mode"], "下载方式", 32)
         if m not in MODES:

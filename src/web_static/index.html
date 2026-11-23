@@ -27,6 +27,16 @@ body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,B
 .nav .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--err);margin-left:4px;vertical-align:middle}
 .rechead{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
 .rechead .seg{flex:0 1 auto}
+.rectools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.rectools button{display:inline-flex;align-items:center;gap:5px}
+.rectools svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rectools button.ic{width:30px;padding:0;justify-content:center}
+.tip{position:relative}
+.tip:hover::after,.tip:focus-visible::after{content:attr(data-tip);position:absolute;top:calc(100% + 6px);right:0;white-space:nowrap;background:var(--fg);color:var(--bg);padding:4px 8px;border-radius:6px;font-size:12px;font-weight:400;line-height:1.4;z-index:30;pointer-events:none}
+.menuwrap{position:relative}
+.popmenu{position:absolute;right:0;top:calc(100% + 6px);min-width:150px;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.18);padding:4px;z-index:40;display:flex;flex-direction:column}
+.popmenu button{height:auto;padding:7px 10px;border:0;background:transparent;color:var(--fg);text-align:left;border-radius:6px;display:block;width:100%}
+.popmenu button:hover{background:var(--bg)}
 .subhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .panel{display:none}
 .panel.on{display:block}
@@ -235,8 +245,16 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="seg" id="recNav">
     <button data-v="dash" class="on">概览</button><button data-v="list">推荐歌单</button>
   </div>
-  <span style="display:flex;gap:6px"><button class="ghost sm" onclick="goSettings('sgSrc')">设置</button>
-  <button class="ghost sm" id="btnManual" onclick="showTab('dl')">手动下载…</button></span>
+  <div class="rectools">
+    <button class="sm tip" id="recSyncBtn" onclick="actSyncHere()" data-tip="只获取推荐歌单并与本地比对，不下载"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>获取推荐</button>
+    <button class="sm tip" id="recDlBtn" onclick="dlPending()" data-tip="按设置下载待下载的歌：未联动 = 下载目录；已联动 = 试听库 + Navidrome"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg><span id="recDlTxt">下载</span></button>
+    <span class="menuwrap"><button class="ghost sm ic tip" id="recSetBtn" aria-label="设置" data-tip="设置" onclick="toggleSetMenu(event)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+      <div class="popmenu hide" id="setMenu">
+        <button onclick="goSettings('sgSrc')">推荐来源设置</button>
+        <button onclick="goSettings('sgAcct')">下载设置</button>
+        <button onclick="goSettings('sgLib')">联动设置</button></div></span>
+    <button class="ghost sm ic tip" id="btnManual" aria-label="手动下载" data-tip="手动下载 / 定时任务：下载指定歌单或专辑" onclick="showTab('dl')"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><path d="M18 14v6"/><path d="m15.5 17.5 2.5 2.5 2.5-2.5"/></svg></button>
+  </div>
 </div>
 <div class="card hide" id="recOff">
   <h2>推荐还不能运行</h2>
@@ -259,9 +277,8 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="card"><h2>最新一份推荐</h2><div id="dbBatches" class="sub">暂无</div></div>
   <div class="card">
     <h2>快捷操作</h2>
-    <div class="qa-t">推荐与文件</div>
-    <div class="qa">
-      <button onclick="actSync()">立即同步推荐</button>
+    <div class="qa-t md-nd">推荐与文件</div>
+    <div class="qa md-nd">
       <button class="ghost md-nd" onclick="actPromote()">一键转正红心曲目</button>
       <button class="ghost md-nd" onclick="actCleanup()">立即清理过期文件</button>
     </div>
@@ -286,11 +303,6 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
     <div class="tools">
       <div class="seg auto" id="lstType"></div>
       <select id="lstBatch"></select>
-      <span style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
-        <button class="sm" id="lstSyncBtn" onclick="actSyncHere()">立即获取推荐</button>
-        <button class="ghost sm" onclick="goSettings('sgSrc')">推荐来源设置</button>
-        <button class="ghost sm" onclick="goSettings('sgAcct')">下载设置</button>
-        <button class="ghost sm" onclick="goSettings('sgLib')">联动设置</button></span>
     </div>
     <div id="lstDesc" class="hint" style="margin:6px 0 0 0"></div>
     <div class="chips" id="lstStates"></div>
@@ -342,7 +354,12 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
 <details class="card lbset" id="sgAcct" open>
   <summary><b>下载渠道</b> <span class="sub">目前只有「音乐平台」：下载账号、音质、请求间隔（以后可扩展其他渠道；默认只按本地文件去重）</span></summary>
   <div class="sbody">
-  <div class="group first"><h3>下载渠道</h3>
+  <div class="group first"><h3>下载时机</h3>
+    <div class="f"><span class="lb">获取推荐后</span><div class="c"><label class="sw"><input type="checkbox" id="autoDl"> 自动下载推荐的歌</label></div></div>
+    <div class="hint">默认关闭：「立即获取推荐」和定时同步<b>只获取推荐歌单并与本地比对</b>，本地没有的显示为「待下载」，到「推荐」页的推荐歌单里手动点「下载」（单首）或「下载待下载的歌」（整批）。打开后，获取到推荐就自动下载。切换后立即保存。</div>
+  </div>
+
+  <div class="group"><h3>下载渠道</h3>
     <div class="f"><span class="lb">用哪个渠道下载</span><div class="c"><select id="dlChannel"></select></div></div>
     <div class="hint" id="dlChannelDesc"></div>
     <div class="hint">渠道负责把推荐的歌变成文件。目前只有「音乐平台」；以后可接入其他下载工具（不在本容器里的也行），选择入口就在这里。</div>
@@ -568,6 +585,7 @@ function renderLb() {
   const active = document.activeElement;
   if (active && ['INPUT', 'SELECT'].includes(active.tagName) && $('p-rec').contains(active)) return;  // 输入时不覆盖
   $('lbTz').textContent = '时区 ' + LB.timezone;
+  $('autoDl').checked = !!LB.auto_download;
   $('lbLink').checked = LB.mode === 'navidrome'; $('outDir').value = LB.dirs.output;
   $('dlChannel').innerHTML = LB.channels.map(x => `<option value="${esc(x.key)}">${esc(x.label)}</option>`).join('');
   $('dlChannel').value = LB.channel;
@@ -587,7 +605,7 @@ function renderLb() {
   $('stratRows').innerHTML = LB.rec_types.map(t => {
     const x = LB.strategy[t.key];
     return `<div class="f"><span class="lb">${esc(t.label)}</span><div class="c">
-      <label class="sw"><input type="checkbox" id="st-${t.key}-on" ${x.enabled ? 'checked' : ''}> ${t.key === 'netease_daily' ? '每天自动获取并下载' : '启用'}</label>
+      <label class="sw"><input type="checkbox" id="st-${t.key}-on" ${x.enabled ? 'checked' : ''}> ${t.key === 'netease_daily' ? '每天自动获取推荐' : '启用'}</label>
       <span class="sub">最大新下载</span><input type="text" id="st-${t.key}-max" class="w90" value="${x.max_new}"></div></div>
       <div class="hint" style="margin:-4px 0 6px 0">${esc(t.en)}：${esc(t.desc)}</div>
       <div class="f md-nd"><span class="lb">歌单名</span><div class="c"><input type="text" id="pn-${t.key}" maxlength="60" value="${esc(LB.playlist_names[t.key])}"></div></div>`;
@@ -611,6 +629,7 @@ function lbPayload(group) {
     case 'mode': return {mode: c('lbLink') ? 'navidrome' : 'folder'};
     case 'output': return {dirs: {output: v('outDir')}};
     case 'channel': return {channel: v('dlChannel')};
+    case 'autodl': return {auto_download: c('autoDl')};
     case 'listenbrainz': return {listenbrainz: {username: v('lbUser'), token: v('lbToken')}};
     case 'navidrome': return {navidrome: {url: v('ndUrl'), user: v('ndUser'), password: v('ndPass'),
       main_folder_id: v('ndMain'), discovery_folder_id: v('ndDisc')}};
@@ -625,6 +644,7 @@ function lbPayload(group) {
 }
 // 来源下拉与联动开关：切换即保存。开启联动前先确认——联动会按下面的设置自动转正、清理（把试听库里过期的歌移入回收站）
 $('lbSource').onchange = () => lbSave('source');
+$('autoDl').onchange = () => lbSave('autodl');
 $('lbLink').onchange = async () => {
   if ($('lbLink').checked && !(await confirmBox('开启与 Navidrome 联动',
       '开启后：推荐的歌先下载到试听库并生成 Navidrome 歌单；你在 Navidrome 里点红心的歌自动转正进主库；试听期满且没点红心的歌会被移入回收站（到期才真正删除，主库不受影响）；可选把红心同步回 ListenBrainz。\n\n还需要你在下面填好 Navidrome 的地址账号、选好主库/试听库、配置目录，没配好之前同步会被拒绝。', '开启'))) {
@@ -657,7 +677,7 @@ const REC_INFO = {netease_daily: ['每日推荐', '音乐平台每日推荐', '�
 let recView = 'dash', recTimer = null, lstType = 'daily', lstBatchId = null, lstState = '', lstData = {};
 let runOpenId = null, runAfter = 0, runText = '', runLogTimer = null;
 try { recView = localStorage.getItem('recView') || 'dash'; } catch (e) {}
-const ST_ZH = {PENDING: '待处理', DOWNLOADING: '下载中', LOCAL_MAIN: '主库已有', LOCAL_DISCOVERY: '试听库', NOT_FOUND: '未找到',
+const ST_ZH = {PENDING: '待下载', DOWNLOADING: '下载中', LOCAL_MAIN: '主库已有', LOCAL_DISCOVERY: '试听库', NOT_FOUND: '未找到',
   DOWNLOAD_FAILED: '下载失败', MULTIPLE_MATCH: '待选择', SKIPPED: '已跳过', PROMOTING: '转正中', PROMOTED: '已转正', EXPIRED: '已过期', DOWNLOADED: '已下载'};
 const ST_CLS = {DOWNLOADED: 'ok', LOCAL_MAIN: 'ok', LOCAL_DISCOVERY: 'ok', PROMOTED: 'ok', PROMOTING: 'run', DOWNLOADING: 'run', NOT_FOUND: 'warn',
   MULTIPLE_MATCH: 'warn', SKIPPED: 'warn', DOWNLOAD_FAILED: 'bad'};
@@ -669,6 +689,7 @@ const REASON_ZH = {exists: '下载目录或音乐库里已有', dup_resolved: '�
   exception: '处理出错', multiple: '本地有多个候选', download: '下载失败', api: '接口错误', invalid: '文件校验失败'};
 const STAT = {  // 统计项：[中文名, 说明（鼠标悬停显示）]
   recommended: ['推荐', '推荐来源里的歌曲总数'],
+  to_download: ['待下载', '本地没有、也还没下载的歌（「获取推荐后自动下载」关闭时只获取推荐）：在推荐歌单里点「下载」即可'],
   downloaded: ['新下载', '本次从音乐平台新下载到试听库的无损歌曲'],
   local_main: ['主库已有', '主库里已经有这首，无需下载'],
   local_discovery: ['试听库已有', '试听库里已经有这首，无需下载'],
@@ -759,7 +780,10 @@ async function dashLoad() {
   }).catch(() => {});
   recSchedule(d.current_task ? 3000 : 15000, () => recActive('dash') && dashLoad());
 }
+// 待下载数 = 当前推荐来源各列表最新一批里的待下载总数（和概览的统计一致）
+function pendingOf(d) { return Object.values(d.latest_batches).reduce((a, b) => a + (b.counts.PENDING || 0), 0); }
 function renderDash(d) {
+  setPending(pendingOf(d)); setBusy(!!d.current_task);
   applyMode(d.mode);
   $('recOff').classList.toggle('hide', !d.setup_issue); $('recOffMsg').textContent = d.setup_issue || '';
   const c = d.current_task, lr = d.last_run;
@@ -775,11 +799,11 @@ function renderDash(d) {
   const ls = (d.last_sync && d.last_sync.stats) || {}, T = d.totals, P = d.pending_cleanup;
   const tiles = d.mode === 'folder' ? [
     ['今日推荐', d.recommended_today, ''], ['本次新下载', ls.downloaded || 0, ls.downloaded ? 'ok' : ''],
-    ['已下载', sum('DOWNLOADED'), sum('DOWNLOADED') ? 'ok' : ''], ['已有（跳过）', sum('LOCAL_MAIN'), ''],
+    ['已下载', sum('DOWNLOADED'), sum('DOWNLOADED') ? 'ok' : ''], ['已有（跳过）', sum('LOCAL_MAIN'), ''], ['待下载', sum('PENDING'), sum('PENDING') ? 'warn' : ''],
     ['未找到', sum('NOT_FOUND'), sum('NOT_FOUND') ? 'warn' : ''], ['下载失败', sum('DOWNLOAD_FAILED'), sum('DOWNLOAD_FAILED') ? 'bad' : ''],
   ] : [
     ['今日推荐', d.recommended_today, ''], ['本次新下载', ls.downloaded || 0, ls.downloaded ? 'ok' : ''],
-    ['主库命中', sum('LOCAL_MAIN'), ''], ['试听库命中', sum('LOCAL_DISCOVERY'), ''],
+    ['主库命中', sum('LOCAL_MAIN'), ''], ['试听库命中', sum('LOCAL_DISCOVERY'), ''], ['待下载', sum('PENDING'), sum('PENDING') ? 'warn' : ''],
     ['未找到', sum('NOT_FOUND'), sum('NOT_FOUND') ? 'warn' : ''], ['下载失败', sum('DOWNLOAD_FAILED'), sum('DOWNLOAD_FAILED') ? 'bad' : ''],
     ['已转正（累计）', T.promoted, T.promoted ? 'ok' : ''], ['待清理', P.files, P.files ? 'warn' : '', `试听满 ${P.retention_days} 天`],
     ['待选择候选', T.multiple_match, T.multiple_match ? 'warn' : ''], ['试听库在库', T.in_discovery, ''],
@@ -789,7 +813,7 @@ function renderDash(d) {
     `<div class="batch"><div><b title="${esc((REC_INFO[type] || [])[2] || '')}">${esc(b.label)}</b> <span class="sub">${esc((REC_INFO[type] || [])[1] || '')} · ${esc(b.date)} · 共 ${b.total} 首${b.status === 'active' ? ' · 进行中' : ''}</span></div>
      <a class="lnk" href="javascript:void 0" onclick="openList('${type}', ${b.batch_id})">查看 ›</a>
      <div class="badges">${stateBadges(b.counts)}</div></div>`).join('') ||
-    (d.source === 'netease' ? '<span class="sub">还没有同步过每日推荐。点「立即同步推荐」，或等设置里的定时时间。</span>'
+    (d.source === 'netease' ? '<span class="sub">还没有同步过每日推荐。点「立即获取推荐」，或等设置里的定时时间。</span>'
       : '<span class="sub">还没有同步过推荐。ListenBrainz 目前没有歌单时同步会正常结束。</span>');
 }
 
@@ -804,18 +828,29 @@ async function recRun(body, label) {
   try { await api('/api/lb/action', body); toast(label + ' 已开始'); recShow('dash'); }
   catch (e) { if (e.busy) { toast('已有任务在运行，请等它结束：' + e.message); dashLoad(); } else toast(e.message); }
 }
-const actSync = () => recRun({kind: 'sync'}, '推荐同步');
-// 推荐歌单页里的「立即获取推荐」：留在本页，等任务跑完自动刷新列表
-async function actSyncHere() {
-  try { await api('/api/lb/action', {kind: 'sync'}); toast('推荐同步 已开始'); }
+// 推荐页顶部的两个主操作（概览和推荐歌单页共用）：「获取推荐」永远只获取并显示歌单；「下载」才按设置下载
+// （未联动 = 下载目录，联动 = 试听库 + Navidrome）。两者都不受设置里「自动下载」的影响（那个只管定时同步）。
+let recPending = 0;
+async function startSyncHere(body, msg) {
+  try { await api('/api/lb/action', body); toast(msg); }
   catch (e) { toast(e.busy ? '已有任务在运行，请等它结束' : e.message); return; }
-  $('lstSyncBtn').disabled = true; syncWait();
+  setBusy(true); refreshHeader();
 }
-async function syncWait() {
-  let d; try { d = await api('/api/lb/dashboard'); } catch (e) { $('lstSyncBtn').disabled = false; return; }
-  if (!recActive('list')) { $('lstSyncBtn').disabled = false; return; }
-  if (d.current_task) { recSchedule(3000, syncWait); return; }
-  $('lstSyncBtn').disabled = false; listLoad();
+const actSyncHere = () => startSyncHere({kind: 'sync', download: false}, '已开始获取推荐（只获取，不下载）');
+const dlPending = () => recPending ? startSyncHere({kind: 'sync', download: true}, '开始下载') : toast('没有待下载的歌');
+const itemDownload = id => startSyncHere({kind: 'sync', download: true, item_id: id}, '开始下载这一首');
+function setPending(n) { recPending = n; $('recDlTxt').textContent = n ? `下载（${n}）` : '下载'; }
+function toggleSetMenu(e) { e.stopPropagation(); $('setMenu').classList.toggle('hide'); }
+document.addEventListener('click', () => $('setMenu').classList.add('hide'));
+// 顶部按钮的状态来自服务器：有任务在跑就禁用（切换标签页再回来也一致）；在推荐歌单页里任务跑完后自动刷新列表
+let hdrBusy = false;
+function setBusy(b) { hdrBusy = b; $('recSyncBtn').disabled = b; $('recDlBtn').disabled = b; }
+async function refreshHeader() {
+  let d; try { d = await api('/api/lb/dashboard'); } catch (e) { setBusy(false); return; }
+  const was = hdrBusy;
+  setPending(pendingOf(d)); setBusy(!!d.current_task);
+  if (d.current_task) { if (recActive('list')) recSchedule(3000, refreshHeader); }
+  else if (was && recActive('list')) listLoad();
 }
 // 跳到设置页并展开某一分组（推荐页里的「设置」入口）
 function goSettings(id) {
@@ -923,6 +958,7 @@ $('lstBatch').onchange = () => { lstBatchId = Number($('lstBatch').value); lstSt
 function openList(type, batchId, state) { lstType = type; lstBatchId = batchId; lstState = state || ''; recShow('list'); }
 async function listLoad() {
   if (!LB) await loadLb();                              // 要知道当前推荐来源有哪些列表
+  refreshHeader();
   if (!LB) return;
   const keys = LB.rec_types.map(t => t.key);
   if (!keys.includes(lstType)) { lstType = keys[0]; lstBatchId = null; lstState = ''; }
@@ -944,6 +980,7 @@ async function listItems() {
   const total = Object.values(r.counts).reduce((a, b) => a + b, 0);
   $('lstStates').innerHTML = `<span style="cursor:pointer;${lstState ? '' : 'font-weight:600;'}" onclick="setLstState('')">全部 ${total}</span>` +
     Object.entries(r.counts).map(([k, n]) => `<span style="cursor:pointer;${lstState === k ? 'font-weight:600;' : ''}" onclick="setLstState('${k}')">${ST_ZH[k] || k} ${n}</span>`).join('');
+  refreshHeader();
   $('lstMeta').textContent = r.batch.type === 'netease_daily' ? `${r.batch.label} · ${r.batch.date}` : `${r.batch.label} · LB 生成于 ${r.batch.date}`;
   lstData = {}; r.items.forEach(i => lstData[i.id] = i);
   $('lstItems').innerHTML = r.items.map(i => {
@@ -953,6 +990,7 @@ async function listItems() {
     if (['NOT_FOUND', 'DOWNLOAD_FAILED', 'SKIPPED'].includes(i.state) || (i.state === 'LOCAL_DISCOVERY' && ['promote_conflict', 'promote_error'].includes(i.reason_kind)))
       btns.push(`<button class="ghost sm" onclick="itemAct(${i.id},'retry')">重试</button>`);
     if (i.state === 'MULTIPLE_MATCH') btns.push(`<button class="sm" onclick="openCand(${i.id})">选择</button>`);
+    if (i.state === 'PENDING') btns.push(`<button class="sm" onclick="itemDownload(${i.id})">下载</button>`);
     return `<div class="rit"><div class="nm"><div><b>${esc(i.title)}</b></div><div class="sub">${esc(i.artist)}${i.album ? ' · ' + esc(i.album) : ''} · 推荐于 ${esc(i.recommended_at)}</div>
       ${i.path ? `<div class="pth">${esc(i.path)}</div>` : ''}${dupHtml(i)}</div>
       <div class="stc"><span class="st ${ST_CLS[i.state] || ''}">${ST_ZH[i.state] || i.state}</span>

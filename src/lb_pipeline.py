@@ -47,6 +47,8 @@ class SyncDeps:
     now: Callable[[], datetime] = datetime.now
     types: Optional[List[str]] = None            # 只处理这些类型（手动按钮/每日 vs 每周调度用）；None=当前推荐来源的全部列表
     netease_daily: Optional[Callable[[], List[Dict[str, Any]]]] = None   # 来源=音乐平台时：取今日每日推荐（见 lb_service）
+    download: bool = True                        # False = 只获取推荐并与本地比对，不下载（没有的歌保持待处理）
+    only_items: Optional[List[int]] = None       # 只处理这些条目（页面上点某首的「下载」）；None=全部
     library_checker: Any = None                  # 仅下载模式：可选的外部音乐库去重（Navidrome / music-tag-web，只读查询）
     paused: bool = field(default=False, init=False)
 
@@ -255,8 +257,12 @@ def process_batch(d: SyncDeps, batch, index: LocalIndex) -> None:
     for it in items:
         if d.paused:
             return
+        if d.only_items is not None and it["id"] not in d.only_items:
+            continue
         st = it["state"]
         if st == ST.DOWNLOAD_FAILED:       # 重试：次数未超限且已到时间
+            if not d.download:             # 只获取推荐时不动失败项（保持「下载失败」可见，等下次真正下载时再重试）
+                continue
             due = _parse_ts(it["next_retry_at"])
             if it["retry_count"] > max_retries or (due and due > d.now()):
                 continue
@@ -362,6 +368,9 @@ def _download_or_defer(d: SyncDeps, it, target: Target, cap: int, new_ok: int, w
                        index: Optional[LocalIndex]) -> int:
     """本地没有这首：冷却期 / 数量上限 / 下载。返回本次新增的成功下载数（0/1）。"""
     h, s, db = d.handle, d.settings, d.db
+    if not d.download:                       # 只获取推荐：本地没有的歌保持待处理，不下载（页面上显示「待下载」）
+        h.add("to_download")
+        return 0
     # 3) 未找到的冷却期内不重复搜索
     nf = lb_repo.last_item_for_track(db, it["track_id"], it["id"], (ST.NOT_FOUND,))
     if nf and (_parse_ts(nf["next_retry_at"]) or datetime.min) > d.now():

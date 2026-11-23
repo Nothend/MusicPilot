@@ -51,4 +51,5 @@ def lb_defaults():
     import lb_settings
     s = lb_settings.defaults()
     s["source"], s["mode"] = "listenbrainz", "navidrome"
+    s["auto_download"] = True          # 旧版同步总是顺带下载；全新安装默认只获取推荐（见 test_defaults.py）
     return s

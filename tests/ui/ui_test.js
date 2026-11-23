@@ -28,7 +28,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   // ---- 页面结构：推荐在最前并作为默认页；下载与定时任务合并；待处理卡片与角标
   const navTabs = [...d.querySelectorAll('#nav button')].map(b => b.dataset.tab);
   check('一级导航只有：推荐 / 记录 / 设置（下载不占一级标签）', navTabs.join(',') === 'rec,jobs,set' && !d.querySelector('#nav [data-tab="dl"]'), navTabs.join(','));
-  check('推荐页右上角有「手动下载」入口', !!$('p-rec').querySelector('#btnManual'));
+  check('推荐页顶部工具栏：获取推荐 / 下载 / 设置 / 手动下载，与「概览｜推荐歌单」同一行', !!$('p-rec').querySelector('.rechead #recNav') && ['recSyncBtn', 'recDlBtn', 'recSetBtn', 'btnManual'].every(i => !!$('p-rec').querySelector('.rechead .rectools #' + i)));
   check('默认打开「推荐」', $('p-rec').classList.contains('on') && !$('p-dl').classList.contains('on'));
   await sleep(600);
   check('「需要你处理」卡片列出待选择候选', !$('todoCard').classList.contains('hide') && txt('todoList').includes('待选择'), txt('todoList'));
@@ -101,7 +101,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   // 点「重试」
   const retryBtn = [...d.querySelectorAll('#lstItems button')].find(b => b.textContent === '重试');
   retryBtn.click(); await sleep(900);
-  check('点「重试」后该条回到待处理', txt('lstItems').includes('待处理'));
+  check('点「重试」后该条回到待处理（页面上称「待下载」）', txt('lstItems').includes('待下载'));
   // 候选选择
   d.querySelector('#lstType button[data-v="weekly_exploration"]').click(); await sleep(900);
   check('待选择条目有「选择」按钮', [...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '选择'));
@@ -162,17 +162,17 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   // 409：任务正在运行 → 页面给出明确提示，不报脚本错误
   const realFetch = w.fetch;
   w.fetch = (u, o) => String(u).includes('/api/lb/action') ? Promise.resolve({ ok: false, status: 409, json: async () => ({ error: '任务正在运行：sync', busy: true, running: { type: 'sync' } }) }) : realFetch(u, o);
-  await w.eval('actSync()'); await sleep(400);
+  await w.eval('actSyncHere()'); await sleep(400);
   check('409 时提示「已有任务在运行」', txt('toast').includes('已有任务在运行'), txt('toast'));
   w.fetch = realFetch;
   // 400：门禁等错误原样显示
   w.fetch = (u, o) => String(u).includes('/api/lb/action') ? Promise.resolve({ ok: false, status: 400, json: async () => ({ error: '请先在设置里填写 Navidrome 地址、用户名和密码' }) }) : realFetch(u, o);
-  await w.eval('actSync()'); await sleep(400);
+  await w.eval('actSyncHere()'); await sleep(400);
   check('400 时显示后端给出的原因', txt('toast').includes('Navidrome 地址'), txt('toast'));
   w.fetch = realFetch;
   const b2 = await countRuns();
-  await w.eval('actSync()'); await sleep(1500);
-  check('点「立即同步推荐」恰好产生 1 个任务', (await countRuns()) === b2 + 1, `${b2}→${await countRuns()}`);
+  await w.eval('actSyncHere()'); await sleep(1500);
+  check('点「获取推荐」恰好产生 1 个任务', (await countRuns()) === b2 + 1, `${b2}→${await countRuns()}`);
   // 设置子页仍在
   d.querySelector('#nav button[data-tab="set"]').click(); await sleep(900);
   check('推荐来源设置在「设置」页的第一组且默认展开', $('sgSrc').tagName === 'DETAILS' && $('sgSrc').open && $('sgSrc').contains($('cLbLb')) && $('lbUser').value === 'me', `lbUser=${$('lbUser').value}`);
@@ -193,7 +193,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('推荐来源选项含 ListenBrainz 与音乐平台每日推荐', [...$('lbSource').options].map(o => o.value).join(',') === 'listenbrainz,netease');
   $('lbSource').value = 'netease'; $('lbSource').dispatchEvent(new w.Event('change')); await sleep(700);      // 切换即自动保存
   check('切到音乐平台每日推荐后：隐藏 ListenBrainz 账号与每周同步，显示每日推荐同步', $('lbSource').value === 'netease' && !vis($('cLbLb')) && !vis($('sDaily').closest('.f')) && vis($('sNeDaily').closest('.f')));
-  check('推荐策略只剩「每日推荐」一项且文案为自动获取并下载', !!$('st-netease_daily-on') && !$('st-weekly_jams-on') && txt('stratRows').includes('每天自动获取并下载'), txt('stratRows').slice(0, 80));
+  check('推荐策略只剩「每日推荐」一项且文案为每天自动获取推荐', !!$('st-netease_daily-on') && !$('st-weekly_jams-on') && txt('stratRows').includes('每天自动获取推荐'), txt('stratRows').slice(0, 80));
   d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(300);
   await w.eval("recShow('list')"); await sleep(900);
   check('推荐歌单页只有一个列表时不显示切换条，按钮只有「每日推荐」，说明里也是', $('lstType').classList.contains('hide') && [...d.querySelectorAll('#lstType button')].map(b => b.dataset.v).join(',') === 'netease_daily' && txt('lstDesc').includes('每日推荐') && !txt('lstDesc').includes('ListenBrainz 的'), txt('lstDesc'));
@@ -216,19 +216,62 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(300);
   await w.eval("recShow('dash')"); await sleep(900);
   const qaBtns = [...d.querySelectorAll('#rv-dash .qa button')].filter(b => !b.closest('.hide')).map(b => b.textContent);
-  check('概览（未联动）：只留「立即同步推荐」，没有转正/清理/索引/红心', qaBtns.join(',') === '立即同步推荐' && !vis(d.querySelector('#rv-dash .qa-t.md-nd')), qaBtns.join(','));
-  check('概览（未联动）：统计只有下载相关的 6 项', $('dbTiles').children.length === 6 && txt('dbTiles').includes('已下载') && !txt('dbTiles').includes('待清理'), txt('dbTiles'));
+  check('概览（未联动）：快捷操作区整组隐藏（没有转正/清理/索引/红心）', qaBtns.length === 0, qaBtns.join(','));
+  check('概览（未联动）：统计只有下载相关的 7 项', $('dbTiles').children.length === 7 && txt('dbTiles').includes('已下载') && txt('dbTiles').includes('待下载') && !txt('dbTiles').includes('待清理'), txt('dbTiles'));
   // ---- 推荐页入口：设置按钮、列表页的「立即获取推荐」与设置直达
-  check('概览右上角有「设置」按钮', [...d.querySelectorAll('#p-rec .rechead button')].some(b => b.textContent === '设置'));
+  const tipOf = id => $(id).getAttribute('data-tip') || '';
+  check('工具栏按钮都有气泡提示；图标按钮另带无障碍名称', ['recSyncBtn', 'recDlBtn', 'recSetBtn', 'btnManual'].every(i => tipOf(i).length >= 2) && $('recSetBtn').getAttribute('aria-label') === '设置' && $('btnManual').getAttribute('aria-label') === '手动下载');
+  check('「获取推荐」「下载」带文字，设置与手动下载是纯图标', $('recSyncBtn').textContent.trim() === '获取推荐' && /^下载/.test($('recDlBtn').textContent.trim()) && $('recSetBtn').textContent.trim() === '' && $('btnManual').textContent.trim() === '');
+  $('recSetBtn').click(); await sleep(100);
+  check('点 ⚙ 弹出菜单：推荐来源设置 / 下载设置 / 联动设置', !$('setMenu').classList.contains('hide') && [...$('setMenu').querySelectorAll('button')].map(b => b.textContent).join(',') === '推荐来源设置,下载设置,联动设置');
+  d.body.click(); await sleep(50);
+  check('点菜单外面菜单收起', $('setMenu').classList.contains('hide'));
   await w.eval("recShow('list')"); await sleep(900);
-  const lbtn = [...d.querySelectorAll('#rv-list .tools > span button')].map(b => b.textContent);
-  check('推荐歌单页有：立即获取推荐 / 推荐来源设置 / 下载设置 / 联动设置', lbtn.join(',') === '立即获取推荐,推荐来源设置,下载设置,联动设置', lbtn.join(','));
-  $('lstSyncBtn').click(); await sleep(400);
-  check('点「立即获取推荐」留在本页并提示已开始', $('p-rec').classList.contains('on') && !$('rv-list').classList.contains('hide') && txt('toast').includes('已开始'), txt('toast'));
-  for (let i = 0; i < 40 && $('lstSyncBtn').disabled; i++) await sleep(500);
-  check('任务结束后按钮恢复可点（列表自动刷新）', !$('lstSyncBtn').disabled);
-  d.querySelectorAll('#rv-list .tools > span button')[3].click(); await sleep(600);
-  check('点「联动设置」跳到设置页并展开「音乐库与整理」', $('p-set').classList.contains('on') && $('sgLib').open);
+  check('推荐歌单页本身不再有那一排按钮（统一在顶部工具栏）', ![...d.querySelectorAll('#rv-list .tools button')].some(b => ['获取推荐', '推荐来源设置', '下载设置', '联动设置'].includes(b.textContent.trim())) && vis($('recNav')) );
+  const sent = []; const rf0 = w.fetch;
+  w.fetch = (u, o) => { if (String(u).includes('/api/lb/action') && o && o.body) sent.push(JSON.parse(o.body)); return rf0(u, o); };
+  $('recSyncBtn').click(); await sleep(400);
+  check('「获取推荐」请求明确不下载（download=false），与设置里的自动下载无关', sent.length === 1 && sent[0].kind === 'sync' && sent[0].download === false, JSON.stringify(sent));
+  check('点「获取推荐」留在本页，提示只获取不下载', $('p-rec').classList.contains('on') && !$('rv-list').classList.contains('hide') && txt('toast').includes('只获取，不下载'), txt('toast'));
+  for (let i = 0; i < 40 && $('recSyncBtn').disabled; i++) await sleep(500);
+  check('任务结束后按钮恢复可点（列表自动刷新）', !$('recSyncBtn').disabled);
+  $('recSyncBtn').click();
+  let sawDisabled = false;                                                                   // 任务很短：连续采样，只要运行期间禁用过就算
+  for (let i = 0; i < 60 && !sawDisabled; i++) { await sleep(25); sawDisabled = $('recSyncBtn').disabled && $('recDlBtn').disabled; }
+  check('任务运行中顶部「获取推荐」「下载」被禁用', sawDisabled);
+  d.querySelector('#nav button[data-tab="set"]').click(); await sleep(4000);               // 任务期间离开推荐页
+  d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(1500);
+  check('开始获取后切到别的标签再回来，按钮不会一直禁用', !$('recSyncBtn').disabled && !$('recDlBtn').disabled);
+  await w.eval("recShow('dash')"); await sleep(600);
+  $('recSyncBtn').click(); await sleep(40);                                                  // 在概览页里同样的场景
+  d.querySelector('#nav button[data-tab="set"]').click(); await sleep(4000);
+  d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(1500);
+  check('概览页：开始获取后切走再回来，按钮同样不会一直禁用', !$('recSyncBtn').disabled && !$('recDlBtn').disabled);
+  await w.eval("recShow('list')"); await sleep(600);
+  $('recSetBtn').click(); await sleep(100); $('setMenu').querySelectorAll('button')[2].click(); await sleep(600);
+  check('菜单里点「联动设置」跳到设置页并展开「音乐库与整理」', $('p-set').classList.contains('on') && $('sgLib').open);
+  // ---- 推荐为主、下载为辅：获取只显示歌单；「下载」才下载；设置里的「自动下载」只管定时同步，默认关闭
+  const dash = await (await realFetch('/api/lb/dashboard')).json();
+  const withPending = Object.entries(dash.latest_batches).find(([t, b]) => (b.counts.PENDING || 0) > 0);
+  check('测试数据里有待下载的批次', !!withPending, JSON.stringify(Object.entries(dash.latest_batches).map(([t, b]) => [t, b.counts])));
+  d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(300);
+  if (withPending) await w.eval(`openList('${withPending[0]}', ${withPending[1].batch_id})`);
+  await sleep(900);
+  const pend = [...d.querySelectorAll('#lstItems .rit')].filter(r => r.textContent.includes('待下载'));
+  check('获取推荐后，本地没有的歌显示「待下载」并带单首「下载」按钮', pend.length >= 1 && pend.every(r => [...r.querySelectorAll('button')].some(b => b.textContent === '下载')), `${pend.length} 首待下载`);
+  check('「下载」按钮显示待下载数量', /^下载（\d+）$/.test($('recDlBtn').textContent), $('recDlBtn').textContent);
+  const runsBefore = await countRuns();
+  sent.length = 0;
+  pend[0].querySelector('button.sm').click(); await sleep(500);
+  check('单首「下载」请求明确要下载并带条目编号', sent.length === 1 && sent[0].download === true && Number.isInteger(sent[0].item_id), JSON.stringify(sent));
+  check('点单首「下载」：提示开始下载，并产生 1 个同步任务', txt('toast').includes('开始下载这一首') && (await countRuns()) === runsBefore + 1, txt('toast'));
+  for (let i = 0; i < 40 && $('recDlBtn').disabled; i++) await sleep(500);
+  check('下载任务结束后按钮恢复', !$('recDlBtn').disabled && !$('recSyncBtn').disabled);
+  d.querySelector('#nav button[data-tab="set"]').click(); await sleep(400);
+  const adl0 = $('autoDl').checked;
+  $('autoDl').checked = !adl0; $('autoDl').dispatchEvent(new w.Event('change')); await sleep(600);
+  check('「自动下载」在「下载渠道」组里，切换即保存', $('sgAcct').contains($('autoDl')) && (await (await realFetch('/api/lb/settings')).json()).auto_download === !adl0);
+  $('autoDl').checked = adl0; $('autoDl').dispatchEvent(new w.Event('change')); await sleep(600);
   d.querySelector('#nav button[data-tab="set"]').click(); await sleep(300);
   // 打开联动：先确认；取消则保持关闭
   $('lbLink').checked = true; $('lbLink').dispatchEvent(new w.Event('change')); await sleep(200);

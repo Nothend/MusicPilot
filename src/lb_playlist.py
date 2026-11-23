@@ -33,7 +33,7 @@ def apply_renames(db, nd, log: Callable[..., None]) -> int:
             log(f"歌单改名失败：{row['name']} → {row['rename_to']} — {e}", "WARNING")
             continue
         lb_repo.finish_rename(db, row["id"], row["rename_to"])
-        log(f"歌单已改名：{row['name']} → {row['rename_to']}")
+        log(f"歌单已改名（推荐歌单的日期按标题里的日期校正，一次性）：{row['name']} → {row['rename_to']}")
         n += 1
     return n
 

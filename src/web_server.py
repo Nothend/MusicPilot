@@ -379,6 +379,13 @@ class App:
                           "main_id": str(body.get("main_id") or "")}
             except (TypeError, ValueError):
                 raise ValueError("缺少条目编号")
+        if kind == "sync":                       # download：省略 = 按设置「获取推荐后自动下载」；true = 现在就下载；item_id = 只处理这一首
+            params = {"download": None if body.get("download") is None else bool(body.get("download"))}
+            if body.get("item_id") is not None:
+                try:
+                    params["item_ids"] = [int(body["item_id"])]
+                except (TypeError, ValueError):
+                    raise ValueError("条目编号不合法")
         run_id = self.lb.start(kind, trigger="manual", types=types, scan=bool(body.get("scan")),
                                dry_run=bool(body.get("dry_run")), params=params)
         return {"run_id": run_id}
