@@ -58,7 +58,6 @@ TRASH_DIRNAME = ".trash"       # discovery 内的软删除目录
 
 def defaults() -> Dict[str, Any]:
     return {
-        "enabled": False,  # 总开关：配置完成前不做任何事（不调度、不下载）
         "mode": DEFAULT_MODE,       # 下载方式（MODES 的 key）：folder 时不连接 Navidrome，没有试听库/转正/清理/红心同步
         "channel": DEFAULT_CHANNEL, # 下载渠道（CHANNELS 的 key）
         "source": DEFAULT_SOURCE,   # 推荐来源（SOURCES 的 key）：决定「推荐」页显示哪些列表、定时同步哪些
@@ -117,6 +116,14 @@ def load(raw: Any) -> Dict[str, Any]:
             s["source"] = LEGACY_SOURCE
         if "mode" not in raw:
             s["mode"] = LEGACY_MODE
+        if raw.get("enabled") is False:
+            # 旧版有一个「推荐联动总开关」，关着时同步/转正/清理（会删文件）/红心同步一律不跑。新版去掉了这个开关（选了推荐来源就是要用），
+            # 为了让「原本关着」的安装升级后仍然什么都不自动做：把会自动运行的各项关掉（页面上可见，需要时自己勾回来）。
+            for t in s["strategy"].values():
+                t["enabled"] = False
+            s["discovery"]["auto_promote"] = False
+            s["discovery"]["auto_cleanup"] = False
+            s["love"]["enabled"] = False
     return s
 
 
@@ -201,8 +208,6 @@ def _folder_id(v: Any, name: str) -> Optional[int]:
 def apply(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
     """把页面提交的（可能只含部分分组的）数据并入当前设置并校验，返回新设置；出错抛 ValueError。"""
     s = copy.deepcopy(current)
-    if "enabled" in payload:
-        s["enabled"] = _bool(payload["enabled"])
     if "mode" in payload:
         m = _str(payload["mode"], "下载方式", 32)
         if m not in MODES:

@@ -235,11 +235,13 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="seg" id="recNav">
     <button data-v="dash" class="on">概览</button><button data-v="list">推荐歌单</button>
   </div>
-  <button class="ghost sm" id="btnManual" onclick="showTab('dl')">手动下载…</button>
+  <span style="display:flex;gap:6px"><button class="ghost sm" onclick="goSettings('sgSrc')">设置</button>
+  <button class="ghost sm" id="btnManual" onclick="showTab('dl')">手动下载…</button></span>
 </div>
 <div class="card hide" id="recOff">
-  <h2>推荐尚未启用</h2>
-  <div class="sub">本工具的重心是「找推荐歌曲」：从你选的推荐来源（ListenBrainz 的每日/每周推荐，或音乐平台的每日推荐）取歌，下载后放进试听库（你点红心的才留下），或只下载到你指定的目录。先到「设置 → 推荐来源」选好来源、配置并（ListenBrainz 需）测试通过，再打开总开关。</div>
+  <h2>推荐还不能运行</h2>
+  <div class="sub" id="recOffMsg" style="color:var(--warn);margin-bottom:6px"></div>
+  <div class="sub">本工具的重心是「找推荐歌曲」：从你选的推荐来源（ListenBrainz 的每日/每周推荐，或音乐平台的每日推荐）取歌，下载后放进试听库（你点红心的才留下），或只下载到你指定的目录。到「设置 → 推荐来源」选好来源并补全配置即可（选了来源就会按各列表的「启用」和定时自动运行）。</div>
   <div class="acts"><button onclick="showTab('set')">去设置</button></div>
 </div>
 
@@ -249,7 +251,7 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
     <div class="todo" id="todoList"></div>
   </div>
   <div class="card">
-    <h2>运行状态 <span id="dbEnabled"></span></h2>
+    <h2>运行状态</h2>
     <div id="dbCurrent" class="kv"><span class="sub">加载中…</span></div>
     <div class="hint" style="margin:6px 0 0 0" id="dbNext"></div>
   </div>
@@ -284,6 +286,11 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
     <div class="tools">
       <div class="seg auto" id="lstType"></div>
       <select id="lstBatch"></select>
+      <span style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+        <button class="sm" id="lstSyncBtn" onclick="actSyncHere()">立即获取推荐</button>
+        <button class="ghost sm" onclick="goSettings('sgSrc')">推荐来源设置</button>
+        <button class="ghost sm" onclick="goSettings('sgAcct')">下载设置</button>
+        <button class="ghost sm" onclick="goSettings('sgLib')">联动设置</button></span>
     </div>
     <div id="lstDesc" class="hint" style="margin:6px 0 0 0"></div>
     <div class="chips" id="lstStates"></div>
@@ -298,20 +305,12 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
 <div id="cSet">
 <details class="card lbset" id="sgSrc" open>
   <summary><b>推荐来源</b> <span class="sub">选从哪里找推荐歌曲（ListenBrainz / 音乐平台每日推荐）、各列表策略、同步时间</span></summary>
-  <div class="warnbox">⚠ 打开总开关后会自动同步推荐、下载、转正、清理。请按下面各项从上到下配置，并「测试连接」通过后，再打开总开关。</div>
 <div class="card" id="cLbSrc">
   <h2>推荐来源</h2>
   <div class="f"><span class="lb">从哪里找推荐</span><div class="c"><select id="lbSource"></select></div></div>
   <div class="hint" id="lbSourceDesc"></div>
   <div class="hint src-ne hide">每日推荐取自当前登录的音乐平台账号；下载用「下载渠道」里设置的账号（下载无损需要 VIP，非 VIP 可借用 VIP 账号）。歌曲自带平台编号，直接下载，不用再搜索匹配。</div>
-  <div class="hint">切换来源不会删除已有的推荐记录和文件，只是「推荐」页和定时同步改为使用所选来源；切回来可继续。</div>
-  <div class="acts"><button onclick="lbSave('source')">保存</button></div>
-</div>
-<div class="card" id="cLbOn">
-  <h2>推荐联动 <span class="sub" id="lbTz"></span></h2>
-  <div class="f"><span class="lb">总开关</span><div class="c"><label class="sw"><input type="checkbox" id="lbEnabled"> 启用推荐联动</label></div></div>
-  <div class="hint">关闭时不会同步推荐、下载、转正或清理。建议先把下面各项配置并测试通过，再打开。所有时间按容器 TZ 解释。下载音质、请求间隔沿用「设置」页。</div>
-  <div class="acts"><button onclick="lbSave('enabled')">保存</button></div>
+  <div class="hint">切换后立即生效、自动保存；不会删除已有的推荐记录和文件，只是「推荐」页和定时同步改为使用所选来源，切回来可继续。选了来源，就会按下面各列表的「启用」和定时时间自动获取推荐。</div>
 </div>
 <div class="card src-lb" id="cLbLb">
   <h2>ListenBrainz</h2>
@@ -329,19 +328,19 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="acts"><button onclick="lbSave('strategy')">保存</button></div>
 </div>
 <div class="card" id="cLbSch">
-  <h2>定时</h2>
+  <h2>定时 <span class="sub" id="lbTz"></span></h2>
   <div class="f src-ne hide"><span class="lb">每日推荐同步</span><div class="c"><input type="time" id="sNeDaily" style="width:120px"><span class="sub">获取并下载当天的每日推荐（平台约 6 点刷新）；在上面「推荐策略」里关掉「每天自动获取并下载」则不定时</span></div></div>
   <div class="f src-lb"><span class="lb">每日同步</span><div class="c"><input type="time" id="sDaily" style="width:120px"></div></div>
   <div class="f src-lb"><span class="lb">每周同步</span><div class="c"><select id="sWeekday" style="max-width:110px"></select><input type="time" id="sWeekly" style="width:120px"></div></div>
   <div class="f md-nd"><span class="lb">转正检查</span><div class="c"><input type="text" id="sPromote" class="w90"><span class="sub">分钟一次</span></div></div>
   <div class="f md-nd"><span class="lb">红心同步</span><div class="c"><input type="text" id="sLove" class="w90"><span class="sub">分钟一次</span></div></div>
   <div class="f md-nd"><span class="lb">清理时间</span><div class="c"><input type="time" id="sClean" style="width:120px"></div></div>
-  <div class="hint">错过的时间点不会补跑。</div>
+  <div class="hint">所有时间按容器时区解释；错过的时间点不会补跑。</div>
   <div class="acts"><button onclick="lbSave('schedule')">保存</button></div>
 </div>
 </details>
 <details class="card lbset" id="sgAcct" open>
-  <summary><b>下载渠道</b> <span class="sub">目前只有「音乐平台」：下载账号、音质、请求间隔、下载去重（以后可扩展其他渠道）</span></summary>
+  <summary><b>下载渠道</b> <span class="sub">目前只有「音乐平台」：下载账号、音质、请求间隔（以后可扩展其他渠道；默认只按本地文件去重）</span></summary>
   <div class="sbody">
   <div class="group first"><h3>下载渠道</h3>
     <div class="f"><span class="lb">用哪个渠道下载</span><div class="c"><select id="dlChannel"></select></div></div>
@@ -370,7 +369,25 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
     <div class="acts"><button onclick="saveDl()">保存</button></div>
   </div>
 
-  <div class="group"><h3>音乐库去重</h3>
+  </div>
+</details>
+<details class="card lbset" id="sgLib">
+  <summary><b>音乐库与整理</b> <span class="sub">是否与 Navidrome 联动（默认不联动）、下载目录、音乐库去重；联动后的试听库、保留与清理、红心同步</span></summary>
+<div class="card" id="cLbMode">
+  <h2>与 Navidrome 联动</h2>
+  <div class="f"><span class="lb">联动开关</span><div class="c"><label class="sw"><input type="checkbox" id="lbLink"> 与 Navidrome 深度联动</label></div></div>
+  <div class="hint md-fo hide">默认关闭：<b>只做推荐和下载，不连接 Navidrome</b>。推荐的歌下载到下面的目录就结束了——没有试听库、歌单、转正、过期清理和红心同步，<b>也绝不会删除或改动目录里已有的文件</b>。切换后立即生效、自动保存。</div>
+  <div class="hint md-nd">已开启：推荐的歌先下载到「试听库」并生成 Navidrome 歌单，你在 Navidrome 里点红心的转正进主库，没点的过期清理；还能把红心同步回 ListenBrainz。请在下面配置 Navidrome、目录和试听库策略。</div>
+</div>
+<div class="card md-fo" id="cLbOut">
+  <h2>下载目录</h2>
+  <div class="f"><span class="lb">下载目录</span><div class="c"><input type="text" id="outDir" placeholder="/app/downloads"></div></div>
+  <div class="hint">只填容器内路径（由 docker-compose 的目录映射决定）。已有的歌按文件标签判断并跳过（含子目录）。</div>
+  <div id="lbOutRes" class="sub" style="margin:0 0 6px 0"></div>
+  <div class="acts"><button class="ghost" onclick="lbTest('output','output','lbOutRes')">检查目录</button><button onclick="lbSave('output')">保存</button></div>
+</div>
+<div class="card md-fo" id="cLbDedupe">
+  <h2>音乐库去重</h2>
     <div class="f"><span class="lb">音乐库</span>
       <div class="c"><select id="libType"><option value="none">不使用（不检查音乐库）</option><option value="navidrome">Navidrome</option>
         <option value="music-tag-web">music-tag-web (MySQL)</option></select></div></div>
@@ -386,22 +403,8 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
       <div class="f"><span class="lb">用户名</span><div class="c"><input type="text" id="mUser" placeholder="用户名"></div></div>
       <div class="f"><span class="lb">密码</span><div class="c"><input type="password" id="mPass" placeholder="密码" autocomplete="new-password"></div></div>
     </div>
-    <div class="hint" id="libHint">跳过音乐库里已有的歌曲；库里仅有 MP3 的歌仍会下载。密码保存后不会回显，留空表示不修改。</div>
+    <div class="hint" id="libHint">可选：推荐/下载的歌，已经在你的 Navidrome 或 music-tag-web 里的就跳过（只读查询）；不选则只按下载目录里的文件去重。库里仅有 MP3 的歌仍会下载。密码保存后不会回显，留空表示不修改。</div>
     <div class="acts"><button class="ghost hide" id="libTestBtn" onclick="testLib()">测试连接</button><button onclick="saveLib()">保存</button></div>
-  </div>
-  </div>
-</details>
-<details class="card lbset" id="sgLib">
-  <summary><b>音乐库与整理</b> <span class="sub">下载方式（是否对接 Navidrome）、下载目录、Navidrome、保留与清理、红心同步</span></summary>
-<div class="card" id="cLbMode">
-  <h2>下载方式</h2>
-  <div class="f"><span class="lb">推荐歌曲怎么处理</span><div class="c"><select id="lbMode"></select></div></div>
-  <div class="hint md-nd">与 Navidrome 联动：推荐的歌先下载到「试听库」并生成 Navidrome 歌单，你在 Navidrome 里点红心的转正进主库，没点的过期清理；还能把红心同步回 ListenBrainz。</div>
-  <div class="hint md-fo hide">仅下载到指定目录：<b>不连接 Navidrome</b>，推荐的歌下载到下面的目录就结束了——没有试听库、歌单、转正、过期清理和红心同步，<b>也绝不会删除或改动目录里已有的文件</b>。已有的歌按文件标签判断并跳过。</div>
-  <div class="f md-fo hide"><span class="lb">下载目录</span><div class="c"><input type="text" id="outDir" placeholder="/app/downloads"></div></div>
-  <div class="hint md-fo hide">只填容器内路径（由 docker-compose 的目录映射决定）。已有歌曲还会参考「下载渠道」页里设置的「音乐库去重」（Navidrome / music-tag-web，只读查询，不用可选「不使用」）。</div>
-  <div id="lbOutRes" class="sub md-fo hide" style="margin:0 0 6px 0"></div>
-  <div class="acts"><button class="ghost md-fo hide" onclick="lbTest('output','mode','lbOutRes')">检查目录</button><button onclick="lbSave('mode')">保存</button></div>
 </div>
   <div class="warnbox md-nd">⚠ 这里的选项会影响转正、清理（含删除试听库文件）和写入 ListenBrainz。<b>不熟悉请不要乱改</b>。</div>
 <div class="card md-nd" id="cLbNd">
@@ -565,9 +568,7 @@ function renderLb() {
   const active = document.activeElement;
   if (active && ['INPUT', 'SELECT'].includes(active.tagName) && $('p-rec').contains(active)) return;  // 输入时不覆盖
   $('lbTz').textContent = '时区 ' + LB.timezone;
-  $('lbEnabled').checked = !!LB.enabled;
-  $('lbMode').innerHTML = LB.modes.map(x => `<option value="${esc(x.key)}">${esc(x.label)}</option>`).join('');
-  $('lbMode').value = LB.mode; $('outDir').value = LB.dirs.output;
+  $('lbLink').checked = LB.mode === 'navidrome'; $('outDir').value = LB.dirs.output;
   $('dlChannel').innerHTML = LB.channels.map(x => `<option value="${esc(x.key)}">${esc(x.label)}</option>`).join('');
   $('dlChannel').value = LB.channel;
   $('dlChannelDesc').textContent = (LB.channels.find(x => x.key === LB.channel) || {}).desc || '';
@@ -606,9 +607,9 @@ function renderLb() {
 function lbPayload(group) {
   const v = id => $(id).value, c = id => $(id).checked;
   switch (group) {
-    case 'enabled': return {enabled: c('lbEnabled')};
     case 'source': return {source: v('lbSource')};
-    case 'mode': return {mode: v('lbMode'), dirs: {output: v('outDir')}};
+    case 'mode': return {mode: c('lbLink') ? 'navidrome' : 'folder'};
+    case 'output': return {dirs: {output: v('outDir')}};
     case 'channel': return {channel: v('dlChannel')};
     case 'listenbrainz': return {listenbrainz: {username: v('lbUser'), token: v('lbToken')}};
     case 'navidrome': return {navidrome: {url: v('ndUrl'), user: v('ndUser'), password: v('ndPass'),
@@ -622,6 +623,15 @@ function lbPayload(group) {
       cleanup_time: v('sClean'), promote_interval_min: v('sPromote'), love_interval_min: v('sLove')}};
   }
 }
+// 来源下拉与联动开关：切换即保存。开启联动前先确认——联动会按下面的设置自动转正、清理（把试听库里过期的歌移入回收站）
+$('lbSource').onchange = () => lbSave('source');
+$('lbLink').onchange = async () => {
+  if ($('lbLink').checked && !(await confirmBox('开启与 Navidrome 联动',
+      '开启后：推荐的歌先下载到试听库并生成 Navidrome 歌单；你在 Navidrome 里点红心的歌自动转正进主库；试听期满且没点红心的歌会被移入回收站（到期才真正删除，主库不受影响）；可选把红心同步回 ListenBrainz。\n\n还需要你在下面填好 Navidrome 的地址账号、选好主库/试听库、配置目录，没配好之前同步会被拒绝。', '开启'))) {
+    $('lbLink').checked = false; return;
+  }
+  lbSave('mode');
+};
 async function lbSave(group) {
   await run(async () => { LB = await api('/api/lb/settings', lbPayload(group)); document.activeElement.blur(); renderLb(); toast('已保存'); });
 }
@@ -715,12 +725,12 @@ function recSchedule(ms, fn) { clearTimeout(recTimer); recTimer = setTimeout(fn,
 let TODO = null;
 async function todoRefresh() {
   try { TODO = await api('/api/lb/todo'); } catch (e) { return; }
-  $('navRec').innerHTML = TODO.enabled && TODO.total ? `<span class="n">${TODO.total}</span>` : '';
+  $('navRec').innerHTML = TODO.total ? `<span class="n">${TODO.total}</span>` : '';
   renderTodo();
 }
 function renderTodo() {
   const T = TODO, card = $('todoCard');
-  if (!T || !T.enabled || !T.total) { card.classList.add('hide'); return; }
+  if (!T || !T.total) { card.classList.add('hide'); return; }
   card.classList.remove('hide');
   $('todoSum').textContent = `共 ${T.total} 项`;
   const rows = [];
@@ -745,14 +755,13 @@ async function dashLoad() {
   renderDash(d); todoRefresh();
   api('/api/lb/schedule').then(r => {
     $('dbNext').textContent = r.upcoming.length ? '计划：' + r.upcoming.map(u => `${u.task} ${u.next.slice(5)}`).join('　·　') + `（时区 ${r.timezone}）`
-      : (d.enabled ? '' : '总开关未启用，不会自动运行（在「设置」里打开）');
+      : '';
   }).catch(() => {});
   recSchedule(d.current_task ? 3000 : 15000, () => recActive('dash') && dashLoad());
 }
 function renderDash(d) {
   applyMode(d.mode);
-  $('recOff').classList.toggle('hide', !!d.enabled);
-  $('dbEnabled').innerHTML = d.enabled ? '<span class="st ok">已启用</span>' : '<span class="st warn">未启用</span>';
+  $('recOff').classList.toggle('hide', !d.setup_issue); $('recOffMsg').textContent = d.setup_issue || '';
   const c = d.current_task, lr = d.last_run;
   const trig = c ? (c.trigger === 'schedule' ? '定时' : c.trigger === 'queue' ? '下载队列' : '手动') : '';
   const kv = (k, v) => `<span class="k">${k}</span><div>${v}</div>`;
@@ -796,6 +805,24 @@ async function recRun(body, label) {
   catch (e) { if (e.busy) { toast('已有任务在运行，请等它结束：' + e.message); dashLoad(); } else toast(e.message); }
 }
 const actSync = () => recRun({kind: 'sync'}, '推荐同步');
+// 推荐歌单页里的「立即获取推荐」：留在本页，等任务跑完自动刷新列表
+async function actSyncHere() {
+  try { await api('/api/lb/action', {kind: 'sync'}); toast('推荐同步 已开始'); }
+  catch (e) { toast(e.busy ? '已有任务在运行，请等它结束' : e.message); return; }
+  $('lstSyncBtn').disabled = true; syncWait();
+}
+async function syncWait() {
+  let d; try { d = await api('/api/lb/dashboard'); } catch (e) { $('lstSyncBtn').disabled = false; return; }
+  if (!recActive('list')) { $('lstSyncBtn').disabled = false; return; }
+  if (d.current_task) { recSchedule(3000, syncWait); return; }
+  $('lstSyncBtn').disabled = false; listLoad();
+}
+// 跳到设置页并展开某一分组（推荐页里的「设置」入口）
+function goSettings(id) {
+  showTab('set');
+  const g = $(id);
+  if (g) { g.open = true; setTimeout(() => g.scrollIntoView && g.scrollIntoView({block: 'start'}), 80); }
+}
 async function actPromote() {
   if (await confirmBox('一键转正红心曲目', '把试听库里已在 Navidrome 标了红心的歌移入主库。\n只新增文件：主库里已有同名文件时会跳过并记录，不会覆盖或删除任何文件。', '转正')) recRun({kind: 'promote'}, '红心转正');
 }
@@ -907,7 +934,7 @@ async function listLoad() {
   let r; try { r = await api('/api/lb/batches?type=' + lstType); } catch (e) { toast(e.message); return; }
   const bs = r.batches;
   $('lstBatch').innerHTML = bs.map(b => `<option value="${b.id}">${esc(b.date)} · 共 ${b.total} 首${b.status === 'active' ? '（进行中）' : ''}</option>`).join('');
-  if (!bs.length) { $('lstItems').innerHTML = '<div class="sub" style="padding:10px">还没有这一类的推荐。</div>'; $('lstStates').innerHTML = ''; $('lstMeta').textContent = ''; return; }
+  if (!bs.length) { $('lstItems').innerHTML = '<div class="sub" style="padding:10px">还没有这一类的推荐。点右上角的「立即获取推荐」；获取不了会提示还缺什么配置。</div>'; $('lstStates').innerHTML = ''; $('lstMeta').textContent = ''; return; }
   if (!bs.some(b => b.id === lstBatchId)) lstBatchId = bs[0].id;
   $('lstBatch').value = String(lstBatchId);
   listItems();

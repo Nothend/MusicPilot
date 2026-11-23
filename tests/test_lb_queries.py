@@ -36,7 +36,7 @@ S = lb_defaults()
 def test_dashboard_on_empty_database(db):
     d = Q.dashboard(db, S, None, NOW)
     assert d["recommended_today"] == 0 and d["latest_batches"] == {} and d["last_sync"] is None
-    assert d["pending_cleanup"]["files"] == 0 and d["enabled"] is False and d["current_task"] is None
+    assert d["pending_cleanup"]["files"] == 0 and "enabled" not in d and d["current_task"] is None
 
 
 def test_dashboard_aggregates(db):

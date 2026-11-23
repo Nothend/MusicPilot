@@ -8,7 +8,7 @@
 - 转正检查  每 promote_interval_min 分钟（需开启「自动转正」）
 - 红心同步  每 love_interval_min 分钟（需开启红心同步）
 - 过期清理  cleanup_time（每天，需开启「自动清理」）
-总开关关闭时什么都不触发。触发时若已有任务在运行（全局只跑一个任务）：不丢弃，每个检查周期重试，
+没有总开关：选了推荐来源就会按各列表的「启用」和定时自动运行（缺配置时被拒绝并记日志）。触发时若已有任务在运行（全局只跑一个任务）：不丢弃，每个检查周期重试，
 时间点任务最多等 BUSY_WAIT_MIN 分钟，间隔任务一直等到能跑为止且不重置计时。
 定时同步因网络类错误失败：RETRY_DELAY_MIN 分钟后自动重试，最多 MAX_RETRIES 次。
 设置每次检查时重新读取，页面上改了立刻生效。
@@ -45,8 +45,6 @@ class LbScheduler:
     # ------------------------------------------------------------ 规则
     def due(self, s: Dict[str, Any], now: datetime) -> List[Dict[str, Any]]:
         """此刻到期的任务（纯判断，不触发）：[{name, kind, types, key}]。"""
-        if not s["enabled"]:
-            return []
         sc, hhmm = s["schedule"], now.strftime("%H:%M")
         day = now.strftime("%Y-%m-%d ") + hhmm
         out: List[Dict[str, Any]] = []
@@ -150,8 +148,6 @@ class LbScheduler:
     def upcoming(self, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
         now = now or self.now()
         s = self.svc.settings()
-        if not s["enabled"]:
-            return []
         sc = s["schedule"]
         out: List[Dict[str, Any]] = []
 

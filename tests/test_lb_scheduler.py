@@ -17,7 +17,6 @@ MON = datetime(2026, 11, 23, 8, 30, 0)
 class FakeSvc:
     def __init__(self):
         self.s = lb_defaults()
-        self.s["enabled"] = True
         self.s["discovery"]["auto_promote"] = False       # 时间点类测试里时钟会大幅跳跃，间隔任务的测试再单独打开
         self.calls = []
         self.raises = None
@@ -103,10 +102,13 @@ def test_cleanup_fires_at_its_time_only_when_auto_cleanup_is_on(env):
     at(clock, "04:00", MON + timedelta(days=1)); assert sched.tick() == []
 
 
-def test_master_switch_off_fires_nothing_at_all(env):
+def test_there_is_no_master_switch_only_the_per_list_and_per_task_switches(env):
     sched, svc, clock, _ = env
-    svc.s["enabled"] = False
-    for hhmm in ("08:30", "10:00", "04:00"):
+    assert "enabled" not in svc.s                                     # 选了推荐来源就是要用：没有额外的总开关
+    for t in svc.s["strategy"].values():
+        t["enabled"] = False
+    svc.s["discovery"]["auto_cleanup"] = False
+    for hhmm in ("08:30", "10:00", "04:00"):                          # 各列表都关了、清理也关了：什么都不触发
         at(clock, hhmm); assert sched.tick() == []
     clock.t += timedelta(days=1)
     assert sched.tick() == [] and svc.calls == []
@@ -258,7 +260,9 @@ def test_upcoming_lists_next_runs_in_order(env):
     assert [u["next"] for u in sched.upcoming()] == sorted(u["next"] for u in sched.upcoming())
 
 
-def test_upcoming_is_empty_when_disabled(env):
+def test_upcoming_is_empty_when_every_list_and_task_is_off(env):
     sched, svc, clock, _ = env
-    svc.s["enabled"] = False
+    for t in svc.s["strategy"].values():
+        t["enabled"] = False
+    svc.s["discovery"]["auto_cleanup"] = False
     assert sched.upcoming() == []

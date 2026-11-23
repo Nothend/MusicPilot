@@ -19,7 +19,7 @@ from test_lb_love import FakeLB as FakeLoveLB, FakeND as FakeLoveND, hit, song a
 
 
 class Env:
-    def __init__(self, tmp_path, enabled=True):
+    def __init__(self, tmp_path):
         self.db = Database(tmp_path / "t.sqlite"); self.db.migrate()
         self.kv, self.tm = SettingsStore(self.db), TaskManager(self.db)
         self.main, self.disc = tmp_path / "songs", tmp_path / "discovery"
@@ -28,7 +28,6 @@ class Env:
         self.adapter = FakeAdapter(self.nd, self.disc)
         self.notes = []
         s = lb_defaults()
-        s["enabled"] = enabled
         s["listenbrainz"].update(username="me", token="tok")
         s["navidrome"].update(url="http://n", user="u", password="p", main_folder_id=1, discovery_folder_id=2)
         s["dirs"].update(main=str(self.main), discovery=str(self.disc))
@@ -68,15 +67,16 @@ def env(tmp_path):
 
 # ---------------------------------------------------------------- 门禁
 @pytest.mark.parametrize("kind", ["sync", "promote", "cleanup"])
-def test_master_switch_off_blocks_state_changing_tasks(tmp_path, kind):
-    e = Env(tmp_path, enabled=False)
-    with pytest.raises(NotReady, match="总开关"):
+def test_incomplete_configuration_blocks_tasks_with_a_readable_reason(tmp_path, kind):
+    e = Env(tmp_path)
+    e.edit(lambda s: s["navidrome"].update(url="", user="", password=""))       # 没有总开关了：缺配置才是拦截的原因
+    with pytest.raises(NotReady, match="Navidrome"):
         e.svc.start(kind)
     assert e.tm.recent_runs() == []
 
 
-def test_master_switch_off_still_allows_read_only_actions(tmp_path):
-    e = Env(tmp_path, enabled=False)
+def test_read_only_actions_still_work_without_a_master_switch(tmp_path):
+    e = Env(tmp_path)
     e.svc.start("reindex"); e.wait()
     assert e.last()["status"] == "done"
     e.svc.lb_factory, e.svc.nd_factory = (lambda s: FakeLoveLB()), (lambda s: FakeLoveND([]))

@@ -29,7 +29,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   const navTabs = [...d.querySelectorAll('#nav button')].map(b => b.dataset.tab);
   check('一级导航只有：推荐 / 记录 / 设置（下载不占一级标签）', navTabs.join(',') === 'rec,jobs,set' && !d.querySelector('#nav [data-tab="dl"]'), navTabs.join(','));
   check('推荐页右上角有「手动下载」入口', !!$('p-rec').querySelector('#btnManual'));
-  check('推荐联动已启用时，默认打开「推荐」', $('p-rec').classList.contains('on') && !$('p-dl').classList.contains('on'));
+  check('默认打开「推荐」', $('p-rec').classList.contains('on') && !$('p-dl').classList.contains('on'));
   await sleep(600);
   check('「需要你处理」卡片列出待选择候选', !$('todoCard').classList.contains('hide') && txt('todoList').includes('待选择'), txt('todoList'));
   check('「推荐」标签上有待处理角标', /\d/.test(txt('navRec')), txt('navRec'));
@@ -51,12 +51,11 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   // ---- 概览
   w.showTab('rec'); await sleep(900);
   check('概览子页可见', !$('rv-dash').classList.contains('hide') && $('rv-list').classList.contains('hide'));
-  check('显示「已启用」', txt('dbEnabled').includes('已启用'), txt('dbEnabled'));
-  check('已启用时不显示「推荐尚未启用」引导卡', $('recOff').classList.contains('hide'));
+  check('没有「总开关」状态标记，配置齐全时不显示「推荐还不能运行」', !$('dbEnabled') && $('recOff').classList.contains('hide'));
   { const rf = w.fetch;
-    w.fetch = async (u, o) => { const r = await rf(u, o); if (!String(u).includes('/api/lb/dashboard')) return r; const j = await r.json(); j.enabled = false; return { ok: true, status: 200, json: async () => j }; };
+    w.fetch = async (u, o) => { const r = await rf(u, o); if (!String(u).includes('/api/lb/dashboard')) return r; const j = await r.json(); j.setup_issue = '请先在设置里填写 ListenBrainz 用户名和 Token'; return { ok: true, status: 200, json: async () => j }; };
     await w.eval('dashLoad()'); w.fetch = rf;
-    check('总开关未启用时，推荐页顶部出现「推荐尚未启用」引导卡并可去设置', !$('recOff').classList.contains('hide') && !!$('recOff').querySelector('button'));
+    check('缺配置时，推荐页顶部出现「推荐还不能运行」并写明缺什么、可去设置', !$('recOff').classList.contains('hide') && txt('recOffMsg').includes('ListenBrainz 用户名和 Token') && !!$('recOff').querySelector('button'), txt('recOffMsg'));
     await w.eval('dashLoad()'); }
   check('统计卡片已渲染', $('dbTiles').children.length >= 10, `${$('dbTiles').children.length} 个`);
   const tiles = txt('dbTiles'); logs.push('   统计: ' + tiles.slice(0, 160));
@@ -167,9 +166,9 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('409 时提示「已有任务在运行」', txt('toast').includes('已有任务在运行'), txt('toast'));
   w.fetch = realFetch;
   // 400：门禁等错误原样显示
-  w.fetch = (u, o) => String(u).includes('/api/lb/action') ? Promise.resolve({ ok: false, status: 400, json: async () => ({ error: '推荐联动还没有启用：请先在「设置」页的「推荐联动设置」里配置并打开总开关' }) }) : realFetch(u, o);
+  w.fetch = (u, o) => String(u).includes('/api/lb/action') ? Promise.resolve({ ok: false, status: 400, json: async () => ({ error: '请先在设置里填写 Navidrome 地址、用户名和密码' }) }) : realFetch(u, o);
   await w.eval('actSync()'); await sleep(400);
-  check('400 时显示后端给出的原因', txt('toast').includes('还没有启用'), txt('toast'));
+  check('400 时显示后端给出的原因', txt('toast').includes('Navidrome 地址'), txt('toast'));
   w.fetch = realFetch;
   const b2 = await countRuns();
   await w.eval('actSync()'); await sleep(1500);
@@ -185,14 +184,14 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('设置页分组顺序：推荐来源 / 下载渠道 / 音乐库与整理 / 通知 / 术语说明', sgIds.every(i => $(i) && $(i).tagName === 'DETAILS') && [...$('cSet').children].map(e => e.id).join(',') === sgIds.join(','), [...$('cSet').children].map(e => e.id).join(','));
   check('推荐来源、下载渠道、通知默认展开，音乐库与整理默认折叠', $('sgSrc').open && $('sgAcct').open && $('sgNotify').open && !$('sgLib').open);
   check('各设置项落在正确的分组里',
-    ['lbEnabled', 'lbUser', 'lbToken', 'sDaily', 'sWeekly', 'sPromote', 'pn-daily'].every(i => $('sgSrc').contains($(i))) &&
-    ['qSel', 'libType', 'dlSrc', 'delay'].every(i => $('sgAcct').contains($(i))) &&
+    ['lbSource', 'lbUser', 'lbToken', 'sDaily', 'sWeekly', 'sPromote', 'pn-daily'].every(i => $('sgSrc').contains($(i))) &&
+    ['qSel', 'dlSrc', 'delay'].every(i => $('sgAcct').contains($(i))) && !$('sgAcct').contains($('libType')) && $('sgLib').contains($('libType')) && !$('cLbOn') && !$('lbEnabled') &&
     ['ndUrl', 'ndMain', 'dirMain', 'dRet', 'dPromote', 'loveOn'].every(i => $('sgLib').contains($(i))) && $('sgNotify').contains($('bark')));
   // ---- 推荐来源：选择后设置页与推荐页只显示该来源的内容
   const vis = el => !el.classList.contains('hide');
   check('默认来源是 ListenBrainz：显示其账号与每日/每周同步，不显示每日推荐同步', $('lbSource').value === 'listenbrainz' && vis($('cLbLb')) && vis($('sDaily').closest('.f')) && !vis($('sNeDaily').closest('.f')) && !!$('st-weekly_jams-on'));
   check('推荐来源选项含 ListenBrainz 与音乐平台每日推荐', [...$('lbSource').options].map(o => o.value).join(',') === 'listenbrainz,netease');
-  $('lbSource').value = 'netease'; await w.eval("lbSave('source')"); await sleep(600);
+  $('lbSource').value = 'netease'; $('lbSource').dispatchEvent(new w.Event('change')); await sleep(700);      // 切换即自动保存
   check('切到音乐平台每日推荐后：隐藏 ListenBrainz 账号与每周同步，显示每日推荐同步', $('lbSource').value === 'netease' && !vis($('cLbLb')) && !vis($('sDaily').closest('.f')) && vis($('sNeDaily').closest('.f')));
   check('推荐策略只剩「每日推荐」一项且文案为自动获取并下载', !!$('st-netease_daily-on') && !$('st-weekly_jams-on') && txt('stratRows').includes('每天自动获取并下载'), txt('stratRows').slice(0, 80));
   d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(300);
@@ -201,26 +200,44 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   await w.eval("recShow('dash')"); await sleep(900);
   check('概览里不再出现 ListenBrainz 的每日熟悉/每周批次，空状态文案按来源', !txt('dbBatches').includes('每周') && txt('dbBatches').includes('每日推荐'), txt('dbBatches'));
   d.querySelector('#nav button[data-tab="set"]').click(); await sleep(600);
-  $('lbSource').value = 'listenbrainz'; await w.eval("lbSave('source')"); await sleep(600);
+  $('lbSource').value = 'listenbrainz'; $('lbSource').dispatchEvent(new w.Event('change')); await sleep(700);
   check('切回 ListenBrainz 后恢复显示', vis($('cLbLb')) && !!$('st-weekly_jams-on') && !$('st-netease_daily-on'));
   await w.eval("recShow('list')"); d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(900);
   check('切回后推荐歌单页恢复三个列表按钮', [...d.querySelectorAll('#lstType button')].map(b => b.dataset.v).join(',') === 'daily,weekly_exploration,weekly_jams' && !$('lstType').classList.contains('hide'));
   d.querySelector('#nav button[data-tab="set"]').click(); await sleep(400);
-  // ---- 下载方式：仅下载到目录时，所有 Navidrome 联动的东西都隐藏
-  check('默认是与 Navidrome 联动：下载方式卡片可见，目录/试听库/红心同步卡片可见，下载目录输入隐藏', $('lbMode').value === 'navidrome' && vis($('cLbMode')) && vis($('cLbNd')) && vis($('cLbDisc')) && vis($('cLbLove')) && !vis($('outDir').closest('.f')));
+  // ---- 联动开关：默认（全新安装）关闭；打开才出现 Navidrome 相关的一切；切换即保存，打开前要确认
+  check('联动已开（本测试数据按联动造的）：Navidrome / 目录 / 试听库 / 红心同步卡片可见，下载目录与音乐库去重卡片隐藏', $('lbLink').checked && vis($('cLbMode')) && vis($('cLbNd')) && vis($('cLbDisc')) && vis($('cLbLove')) && !vis($('cLbOut')) && !vis($('cLbDedupe')));
   check('下载渠道选择在「下载渠道」组里，目前只有音乐平台', $('sgAcct').contains($('dlChannel')) && [...$('dlChannel').options].map(o => o.value).join(',') === 'platform' && txt('dlChannelDesc').length > 0);
-  $('lbMode').value = 'folder'; $('outDir').value = '/tmp/ui_out_dir'; await w.eval("lbSave('mode')"); await sleep(600);
-  check('切到仅下载：隐藏 Navidrome / 目录 / 试听库 / 红心同步 / 联动专属定时与歌单名', ['cLbNd', 'cLbDir', 'cLbDisc', 'cLbLove'].every(i => !vis($(i))) && !vis($('sPromote').closest('.f')) && !vis($('sClean').closest('.f')) && !vis($('sLove').closest('.f')) && !vis($('pn-daily').closest('.f')) && vis($('cLbMode')) && vis($('outDir').closest('.f')) && $('outDir').value === '/tmp/ui_out_dir');
-  await w.eval("lbTest('output','mode','lbOutRes')"); await sleep(600);
-  check('检查目录给出结果', txt('lbOutRes').includes('下载目录可用'), txt('lbOutRes'));
+  $('lbLink').checked = false; $('lbLink').dispatchEvent(new w.Event('change')); await sleep(700);        // 关闭联动：不需要确认，立即保存
+  check('关闭联动：隐藏 Navidrome / 目录 / 试听库 / 红心同步 / 联动专属定时与歌单名，出现下载目录与音乐库去重', ['cLbNd', 'cLbDir', 'cLbDisc', 'cLbLove'].every(i => !vis($(i))) && !vis($('sPromote').closest('.f')) && !vis($('sClean').closest('.f')) && !vis($('sLove').closest('.f')) && !vis($('pn-daily').closest('.f')) && vis($('cLbMode')) && vis($('cLbOut')) && vis($('cLbDedupe')));
+  $('outDir').value = '/tmp/ui_out_dir'; await w.eval("lbSave('output')"); await sleep(500);
+  await w.eval("lbTest('output','output','lbOutRes')"); await sleep(600);
+  check('下载目录已保存，检查目录给出结果', $('outDir').value === '/tmp/ui_out_dir' && txt('lbOutRes').includes('下载目录可用'), txt('lbOutRes'));
   d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(300);
   await w.eval("recShow('dash')"); await sleep(900);
   const qaBtns = [...d.querySelectorAll('#rv-dash .qa button')].filter(b => !b.closest('.hide')).map(b => b.textContent);
-  check('概览（仅下载）：只留「立即同步推荐」，没有转正/清理/索引/红心', qaBtns.join(',') === '立即同步推荐' && !vis(d.querySelector('#rv-dash .qa-t.md-nd')), qaBtns.join(','));
-  check('概览（仅下载）：统计只有下载相关的 6 项', $('dbTiles').children.length === 6 && txt('dbTiles').includes('已下载') && !txt('dbTiles').includes('待清理'), txt('dbTiles'));
-  d.querySelector('#nav button[data-tab="set"]').click(); await sleep(600);
-  $('lbMode').value = 'navidrome'; await w.eval("lbSave('mode')"); await sleep(600);
-  check('切回联动后全部恢复', ['cLbNd', 'cLbDir', 'cLbDisc', 'cLbLove'].every(i => vis($(i))) && !vis($('outDir').closest('.f')) && vis($('sPromote').closest('.f')));
+  check('概览（未联动）：只留「立即同步推荐」，没有转正/清理/索引/红心', qaBtns.join(',') === '立即同步推荐' && !vis(d.querySelector('#rv-dash .qa-t.md-nd')), qaBtns.join(','));
+  check('概览（未联动）：统计只有下载相关的 6 项', $('dbTiles').children.length === 6 && txt('dbTiles').includes('已下载') && !txt('dbTiles').includes('待清理'), txt('dbTiles'));
+  // ---- 推荐页入口：设置按钮、列表页的「立即获取推荐」与设置直达
+  check('概览右上角有「设置」按钮', [...d.querySelectorAll('#p-rec .rechead button')].some(b => b.textContent === '设置'));
+  await w.eval("recShow('list')"); await sleep(900);
+  const lbtn = [...d.querySelectorAll('#rv-list .tools > span button')].map(b => b.textContent);
+  check('推荐歌单页有：立即获取推荐 / 推荐来源设置 / 下载设置 / 联动设置', lbtn.join(',') === '立即获取推荐,推荐来源设置,下载设置,联动设置', lbtn.join(','));
+  $('lstSyncBtn').click(); await sleep(400);
+  check('点「立即获取推荐」留在本页并提示已开始', $('p-rec').classList.contains('on') && !$('rv-list').classList.contains('hide') && txt('toast').includes('已开始'), txt('toast'));
+  for (let i = 0; i < 40 && $('lstSyncBtn').disabled; i++) await sleep(500);
+  check('任务结束后按钮恢复可点（列表自动刷新）', !$('lstSyncBtn').disabled);
+  d.querySelectorAll('#rv-list .tools > span button')[3].click(); await sleep(600);
+  check('点「联动设置」跳到设置页并展开「音乐库与整理」', $('p-set').classList.contains('on') && $('sgLib').open);
+  d.querySelector('#nav button[data-tab="set"]').click(); await sleep(300);
+  // 打开联动：先确认；取消则保持关闭
+  $('lbLink').checked = true; $('lbLink').dispatchEvent(new w.Event('change')); await sleep(200);
+  check('打开联动前弹出确认，说明会转正与清理', $('recConfirm').hasAttribute('open') && txt('rcBody').includes('回收站'), txt('rcBody').slice(0, 60));
+  $('recConfirm').close('no'); await sleep(400);
+  check('取消后开关恢复为关闭，且没有保存', !$('lbLink').checked && !vis($('cLbNd')) && (await (await realFetch('/api/lb/settings')).json()).mode === 'folder');
+  $('lbLink').checked = true; $('lbLink').dispatchEvent(new w.Event('change')); await sleep(200);
+  $('rcOk').click(); await sleep(800);
+  check('确认后联动打开并保存，Navidrome 相关卡片恢复', $('lbLink').checked && ['cLbNd', 'cLbDir', 'cLbDisc', 'cLbLove'].every(i => vis($(i))) && !vis($('cLbOut')) && !vis($('cLbDedupe')) && vis($('sPromote').closest('.f')));
   check('术语说明包含主库/试听库/转正/MBID', ['主库', '试听库', '转正', 'MBID'].every(t => txt('sgGloss').includes(t)), '');
 
 

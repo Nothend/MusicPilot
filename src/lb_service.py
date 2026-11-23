@@ -32,8 +32,6 @@ from task_manager import RunHandle, TaskBusy, TaskManager
 logger = logging.getLogger(__name__)
 
 KINDS = ("sync", "promote", "cleanup", "reindex", "love", "dedup")
-# 这些任务会改动库内容 / 下载 / 写 ListenBrainz：总开关关闭时拒绝
-GATED = ("sync", "promote", "cleanup", "dedup")
 LABELS = {"sync": "推荐同步", "promote": "红心转正", "cleanup": "过期清理", "reindex": "同步索引", "love": "红心同步", "dedup": "重复去重"}
 LOVE_PREVIEW_KEY = "lb.love_preview"
 LOVE_UNRESOLVED_KEY = "lb.love_unresolved"
@@ -116,11 +114,8 @@ class LbService:
     def check_ready(self, kind: str, s: Dict[str, Any], *, dry_run: bool = False) -> None:
         if kind not in KINDS:
             raise NotReady("未知的任务类型")
-        if kind in GATED or (kind == "love" and not dry_run):
-            if not s["enabled"]:
-                raise NotReady("推荐联动还没有启用：请先在「设置 → 推荐来源」里配置并打开总开关")
-            if kind == "love" and not s["love"]["enabled"]:
-                raise NotReady("红心同步还没有启用（会写入 ListenBrainz，需要你在「红心同步」里明确打开）")
+        if kind == "love" and not dry_run and not s["love"]["enabled"]:
+            raise NotReady("红心同步还没有启用（会写入 ListenBrainz，需要你在「红心同步」里明确打开）")
         if s["mode"] == "folder":                       # 仅下载模式：不与 Navidrome 对接
             if kind != "sync":
                 raise NotReady("当前是「仅下载到指定目录」模式，不与 Navidrome 对接，这个功能不可用（在「设置 → 音乐库与整理」里切换下载方式）")
@@ -275,7 +270,14 @@ class LbService:
 
     # ------------------------------------------------------------ 页面用的查询
     def dashboard(self) -> Dict[str, Any]:
-        return lb_queries.dashboard(self.db, self.settings(), self.tm.current(), self.now())
+        s = self.settings()
+        d = lb_queries.dashboard(self.db, s, self.tm.current(), self.now())
+        try:                                       # 还缺什么配置才能同步：页面据此在顶部给出提示和「去设置」
+            self.check_ready("sync", s)
+            d["setup_issue"] = ""
+        except NotReady as e:
+            d["setup_issue"] = str(e)
+        return d
 
     def love_preview(self) -> Optional[Dict[str, Any]]:
         return self.kv.get(LOVE_PREVIEW_KEY)

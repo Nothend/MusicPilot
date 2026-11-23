@@ -32,9 +32,8 @@ class Api:
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
         self.configure()
 
-    def configure(self, enabled=True):
+    def configure(self):
         s = lb_defaults()
-        s["enabled"] = enabled
         s["listenbrainz"].update(username="me", token="tok")
         s["navidrome"].update(url="http://n", user="u", password="p", main_folder_id=1, discovery_folder_id=2)
         s["dirs"].update(main=str(self.main), discovery=str(self.disc))
@@ -68,7 +67,7 @@ def api(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- 只读接口
 def test_read_endpoints_work_on_an_empty_database(api):
     d = api.get("/api/lb/dashboard").json()
-    assert d["enabled"] is True and d["latest_batches"] == {} and d["current_task"] is None
+    assert d["setup_issue"] == "" and d["latest_batches"] == {} and d["current_task"] is None
     assert api.get("/api/lb/batches").json() == {"batches": []}
     assert api.get("/api/lb/runs").json() == {"runs": [], "current": None}
     assert api.get("/api/lb/cleanup/preview").json()["due_files"] == 0
@@ -109,7 +108,7 @@ def test_mb_search_is_proxied_and_errors_are_400(api, monkeypatch):
 
 def test_todo_counts_everything_waiting_for_the_user(api):
     db = api.app.store.db
-    assert api.get("/api/lb/todo").json() == {"enabled": True, "multiple": 0, "dup": 0, "love_unresolved": 0, "total": 0,
+    assert api.get("/api/lb/todo").json() == {"multiple": 0, "dup": 0, "love_unresolved": 0, "total": 0,
                                               "multiple_batch": None, "dup_batch": None}
     tr = lambda n: {"recording_mbid": f"m{n}", "artist": "A", "title": f"T{n}", "album": "", "duration_ms": 1, "artists": []}
     bid = lb_repo.create_batch(db, "weekly_jams", {"mbid": "p", "title": "t", "date": "d"}, {"tracks": [tr(1), tr(2)]})
@@ -120,7 +119,7 @@ def test_todo_counts_everything_waiting_for_the_user(api):
             c.execute("INSERT INTO local_files(nd_song_id, library, indexed_at) VALUES(?,?,'2026-11-22T00:00:00')", (sid, lib))
     lb_repo.add_dup_suspects(db, i2, [("m-main", "near", 1.0), ("m-gone", "near", 1.0)])
     api.app.kv.set("lb.love_unresolved", {"at": "t", "items": [{"id": "s1"}, {"id": "s2"}, {"id": "s3"}]})
-    assert api.get("/api/lb/todo").json() == {"enabled": True, "multiple": 1, "dup": 1, "love_unresolved": 3, "total": 5,
+    assert api.get("/api/lb/todo").json() == {"multiple": 1, "dup": 1, "love_unresolved": 3, "total": 5,
                                               "multiple_batch": {"id": bid, "type": "weekly_jams"}, "dup_batch": {"id": bid, "type": "weekly_jams"}}
     lb_repo.dismiss_dup_suspects(db, [i2])                               # 选了「两份都留」后不再算待处理
     assert api.get("/api/lb/todo").json()["dup"] == 0
@@ -162,11 +161,14 @@ def test_items_endpoint_lists_the_recommendations(api):
     assert len(api.get(f"/api/lb/items?batch={bid}&state={ST.NOT_FOUND}").json()["items"]) == 0
 
 
-def test_disabled_master_switch_returns_a_readable_400(api):
-    api.configure(enabled=False)
+def test_missing_configuration_returns_a_readable_400_and_the_dashboard_says_what_is_missing(api):
+    s = api.app.kv.get(lb_settings.SETTINGS_KEY)
+    s["listenbrainz"].update(username="", token="")
+    api.app.kv.set(lb_settings.SETTINGS_KEY, s)
     r = api.post("/api/lb/action", {"kind": "sync"})
-    assert r.status_code == 400 and "总开关" in r.json()["error"]
+    assert r.status_code == 400 and "ListenBrainz" in r.json()["error"]
     assert api.get("/api/lb/runs").json()["runs"] == []
+    assert "ListenBrainz" in api.get("/api/lb/dashboard").json()["setup_issue"]       # 页面据此显示「还缺什么」+「去设置」
 
 
 def test_a_second_action_while_one_runs_gets_409_busy(api):
@@ -256,10 +258,14 @@ def test_startup_recovers_leftovers_from_a_killed_process(api):
         api.app.scheduler.stop()
 
 
-def test_schedule_endpoint_lists_upcoming_runs_only_when_enabled(api):
+def test_schedule_endpoint_lists_upcoming_runs_and_follows_the_per_list_switches(api):
     up = api.get("/api/lb/schedule").json()
     assert {u["task"] for u in up["upcoming"]} >= {"每日同步（每日熟悉）", "每周同步（Weekly）", "过期清理", "转正检查"} and up["timezone"]
-    api.configure(enabled=False)
+    s = api.app.kv.get(lb_settings.SETTINGS_KEY)
+    for t in s["strategy"].values():
+        t["enabled"] = False
+    s["discovery"].update(auto_cleanup=False, auto_promote=False)
+    api.app.kv.set(lb_settings.SETTINGS_KEY, s)
     assert api.get("/api/lb/schedule").json()["upcoming"] == []
 
 
@@ -273,3 +279,22 @@ def test_the_scheduler_is_started_and_stopped_with_the_app(api):
 
 def test_download_queue_shares_the_lock_with_recommend_tasks(api):
     assert api.app.jobs.task_lock is api.app.tm
+
+
+def test_manual_download_dedupe_reuses_the_linked_navidrome_connection(api):
+    """联动开启时，「音乐库去重」不再让用户填第二份 Navidrome：直接用联动里的那份；关闭联动则沿用页面里单独设置的。"""
+    own = {"use_library": True, "library": {"type": "music-tag-web", "navidrome": {"host": "", "user": "", "password": ""},
+                                           "mysql": {"host": "db", "port": 3306, "user": "u", "password": "p", "database": "d"}}}
+    linked = api.app._library_settings(own)                        # 测试数据是联动 + Navidrome 已配置
+    assert linked["library"]["type"] == "navidrome" and linked["use_library"] is True
+    assert linked["library"]["navidrome"] == {"host": "http://n", "user": "u", "password": "p"}
+    assert linked["library"]["mysql"] == own["library"]["mysql"]    # 其余设置原样保留
+    assert own["library"]["type"] == "music-tag-web"                # 不改动原对象
+
+    s = api.app.kv.get(lb_settings.SETTINGS_KEY); s["mode"] = "folder"
+    api.app.kv.set(lb_settings.SETTINGS_KEY, s)
+    assert api.app._library_settings(own) is own                    # 未联动：用页面里的「音乐库去重」设置
+
+    s["mode"] = "navidrome"; s["navidrome"]["password"] = ""
+    api.app.kv.set(lb_settings.SETTINGS_KEY, s)
+    assert api.app._library_settings(own) is own                    # 联动但 Navidrome 没配好：同样沿用

@@ -67,6 +67,7 @@ class App:
         self.lb = LbService(db=self.store.db, kv=self.kv, tm=self.tm, store=self.store,
                             notify=self._bark_notify,
                             request_delay=lambda: effective_request_delay(self.store.get()["settings"]))
+        self.jobs.library_settings = self._library_settings
         self.scheduler = Scheduler(self.store, self.jobs)
         self.lb_scheduler = LbScheduler(self.lb, self.kv)      # 推荐联动的定时器（总开关关闭时什么都不触发）
         self._qr: Dict[str, float] = {}
@@ -74,6 +75,17 @@ class App:
         self._qr_lock = threading.Lock()
         self._lb_lock = threading.Lock()
         self._acct_cache = (0.0, None)  # (时间戳, 账号资料)，避免页面频繁刷新打音乐平台接口
+
+    def _library_settings(self, settings: Dict[str, Any]) -> Dict[str, Any]:
+        """与 Navidrome 联动开启时，手动下载的「音乐库去重」直接用联动里填的那份 Navidrome 连接，不再让用户填两遍。"""
+        s = lb_settings.load(self.kv.get(lb_settings.SETTINGS_KEY))
+        n = s["navidrome"]
+        if s["mode"] != "navidrome" or not (n["url"] and n["user"] and n["password"]):
+            return settings
+        lib = effective_library(settings)
+        return {**settings, "use_library": True,
+                "library": {"type": "navidrome", "navidrome": {"host": n["url"], "user": n["user"], "password": n["password"]},
+                            "mysql": lib["mysql"]}}
 
     def _bark_notify(self, title: str, body: str) -> bool:
         from bark import BarkNotifier

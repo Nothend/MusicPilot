@@ -201,7 +201,7 @@ def _svc(tmp_path, **kw):
 
 def _folder_settings(tmp_path):
     s = lb_defaults()
-    s.update(enabled=True, mode="folder")
+    s.update(mode="folder")
     s["dirs"]["output"] = str(tmp_path / "dl")
     s["listenbrainz"].update(username="me", token="t")
     return s                                                                          # 注意：没有填 Navidrome 任何信息
@@ -217,7 +217,7 @@ def test_folder_mode_sync_needs_no_navidrome_but_other_tasks_are_refused(tmp_pat
     s["dirs"]["output"] = ""
     with pytest.raises(NotReady, match="下载目录"):
         svc.check_ready("sync", s)
-    s2 = lb_defaults(); s2.update(enabled=True)                               # 联动模式仍要求 Navidrome
+    s2 = lb_defaults()                               # 联动模式仍要求 Navidrome
     s2["listenbrainz"].update(username="me", token="t")
     with pytest.raises(NotReady, match="Navidrome"):
         svc.check_ready("sync", s2)

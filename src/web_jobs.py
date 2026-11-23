@@ -51,6 +51,8 @@ class JobManager:
         # 与推荐联动任务共用的全局锁（TaskManager）：轮到本队列的任务时，若有推荐任务在跑就等它结束再开始
         self.task_lock = task_lock
         self.base_dir = base_dir
+        # 音乐库去重用的设置：默认就是页面里的「音乐库去重」；与 Navidrome 联动开启时由 App 换成联动用的那一份 Navidrome 连接（只配置一遍）
+        self.library_settings = lambda settings: settings
         self.on_finish = on_finish  # 回调(job_snapshot)：定时任务据此记录最近结果
         self._lock = threading.RLock()
         self._jobs: Dict[str, Job] = {}
@@ -404,7 +406,7 @@ class JobManager:
 
         checker = None
         try:
-            checker = build_library_checker(settings)
+            checker = build_library_checker(self.library_settings(settings))
         except Exception as e:
             job.log(f"音乐库检查不可用，仅做本地去重：{e}")
         if checker is not None:

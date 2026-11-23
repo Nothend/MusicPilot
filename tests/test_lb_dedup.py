@@ -157,7 +157,7 @@ def test_service_starts_dedup_task_and_validates_first(tmp_path):
     from lb_service import LbService
     from settings_store import SettingsStore
     env, item, disc_file, main_file, main_id = setup_pair(tmp_path)
-    s = dict(env.settings, enabled=True)
+    s = dict(env.settings)
     kv = SettingsStore(env.db)
     kv.set(lb_settings.SETTINGS_KEY, s)
     svc = LbService(db=env.db, kv=kv, tm=env.tm, nd_factory=lambda x: env.nd, now=lambda: NOW)

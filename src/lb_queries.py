@@ -41,7 +41,6 @@ def dashboard(db: Database, settings: Dict[str, Any], current_task: Optional[Dic
         loved = {r["status"]: r["n"] for r in c.execute("SELECT status, COUNT(*) AS n FROM love_sync GROUP BY status")}
     pv = lb_cleanup.preview(db, settings, now=now)
     return {
-        "enabled": settings["enabled"],
         "mode": settings["mode"], "channel": settings["channel"],
         "source": settings["source"], "source_label": SOURCES[settings["source"]]["label"],
         "current_task": current_task,
@@ -78,7 +77,7 @@ def todo(db: Database, kv, settings: Dict[str, Any]) -> Dict[str, Any]:
             "SELECT b.id, b.type FROM recommendation_items i JOIN recommendation_batches b ON b.id=i.batch_id "
             "WHERE i.state=? ORDER BY b.id DESC LIMIT 1", (ST.MULTIPLE_MATCH,)).fetchone()
     unresolved = len((kv.get("lb.love_unresolved") or {}).get("items", []))
-    return {"enabled": settings["enabled"], "multiple": multiple, "dup": dup, "love_unresolved": unresolved,
+    return {"multiple": multiple, "dup": dup, "love_unresolved": unresolved,
             "total": multiple + dup + unresolved,
             # 点「去处理」时直达最新的那一批（没有则为 None）
             "multiple_batch": dict(mul_b) if mul_b else None, "dup_batch": dict(dup_b) if dup_b else None}

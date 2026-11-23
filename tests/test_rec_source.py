@@ -71,7 +71,7 @@ def batches(env):
 # ---------------------------------------------------------------- 设置
 def test_old_saved_settings_still_load_with_the_new_keys_defaulted():
     s = lb_settings.load({"enabled": True, "listenbrainz": {"username": "me", "token": "t"}})   # 升级前保存的设置：没有 source
-    assert s["source"] == "listenbrainz" and s["enabled"] is True
+    assert s["source"] == "listenbrainz" and "enabled" not in s
     assert s["strategy"]["netease_daily"] == {"enabled": True, "max_new": 0}
     assert s["schedule"]["netease_daily_time"] == "07:30"
     assert s["playlist_names"]["netease_daily"] == "每日推荐 {date}"
@@ -262,7 +262,6 @@ def test_upcoming_reflects_the_active_source(sched_env):
 # ---------------------------------------------------------------- 服务门禁
 def _svc_settings(source, lb_creds):
     s = lb_defaults()
-    s["enabled"] = True
     s["source"] = source
     s["navidrome"].update(url="http://n", user="u", password="p", main_folder_id=1, discovery_folder_id=2)
     if lb_creds:

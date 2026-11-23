@@ -6,7 +6,7 @@ import lb_settings as S
 
 def test_defaults_safe_and_complete():
     d = S.defaults()
-    assert d["enabled"] is False                       # 配置完成前什么都不做
+    assert "enabled" not in d                          # 没有总开关：选了推荐来源就是要用
     assert d["strategy"]["daily"]["max_new"] == 0      # Daily 不限
     assert d["strategy"]["weekly_jams"]["max_new"] == 30
     assert d["discovery"]["retention_days"] == 7 and d["discovery"]["trash_days"] == 7
@@ -72,14 +72,12 @@ def test_validation_errors(payload, msg):
 
 def test_valid_full_update_and_normalization():
     s = S.apply(S.defaults(), {
-        "enabled": "true",
         "navidrome": {"url": "http://10.0.0.6:4533/", "user": "u", "main_folder_id": "1", "discovery_folder_id": 2},
         "dirs": {"main": "/music//songs/", "discovery": "/music/discovery"},
         "strategy": {"weekly_jams": {"enabled": False, "max_new": "10"}},
         "discovery": {"auto_cleanup": "false", "retention_days": "14"},
         "schedule": {"daily_time": "07:05", "weekly_weekday": "2"},
     })
-    assert s["enabled"] is True
     assert s["navidrome"]["url"] == "http://10.0.0.6:4533"
     assert (s["navidrome"]["main_folder_id"], s["navidrome"]["discovery_folder_id"]) == (1, 2)
     assert s["dirs"]["main"] == "/music/songs"
@@ -91,8 +89,8 @@ def test_valid_full_update_and_normalization():
 def test_failed_apply_leaves_nothing_half_done():
     cur = S.defaults()
     with pytest.raises(ValueError):
-        S.apply(cur, {"enabled": True, "dirs": {"main": "bad"}})
-    assert cur["enabled"] is False
+        S.apply(cur, {"love": {"enabled": True}, "dirs": {"main": "bad"}})
+    assert cur["love"]["enabled"] is False
 
 
 # ---------------------------------------------------------------- 命名：多歌手连接符
