@@ -102,3 +102,10 @@ def test_star_playlist_calls():
     c.delete_playlist("p1")
     assert sess.calls[3]["url"].endswith("/deletePlaylist") and sess.calls[3]["params"]["id"] == "p1"
     assert c.starred_songs()[0]["id"] == "s1"
+
+
+def test_rename_playlist_calls_update_playlist():
+    c, sess = client([ok()])
+    c.rename_playlist("p1", "LB Daily Jams 2026-11-23")
+    assert sess.calls[0]["url"].endswith("/updatePlaylist")
+    assert sess.calls[0]["params"]["playlistId"] == "p1" and sess.calls[0]["params"]["name"] == "LB Daily Jams 2026-11-23"

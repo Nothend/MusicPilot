@@ -6,7 +6,9 @@
 """
 
 import logging
+import re
 import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -19,6 +21,23 @@ USER_AGENT = "MusicPilot/1.0 (+https://github.com/Nothend/MusicPilot)"
 # createdfor 歌单的 source_patch -> 推荐类型。daily 的取值在账号出现 Daily Jams 前未实测，
 # 因此另按标题兜底（见 classify）
 _PATCH_TYPES = {"weekly-jams": "weekly_jams", "weekly-exploration": "weekly_exploration", "daily-jams": "daily"}
+
+
+_TITLE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def batch_date(title: str, date: str) -> str:
+    """歌单的"日期标签"（YYYY-MM-DD）：以 LB 标题里的日期为准（与 LB 页面一致），没有再把创建时间换算成本地时区。
+
+    不能直接截 date 的前 10 位：它是 UTC 时间，LB 在北京时间 00:01 生成的"当日"歌单会被标成前一天。
+    """
+    found = _TITLE_DATE.findall(title or "")
+    if found:
+        return found[-1]
+    try:
+        return datetime.fromisoformat(date).astimezone().strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return (date or "")[:10]
 
 
 class LBError(Exception):

@@ -24,7 +24,7 @@ def test_version_tags():
     assert M.version_tags("Song (Live)") == {"live"}
     assert M.version_tags("Song - 現場版") == {"live"}
     assert M.version_tags("Alive") == set()                      # 词边界：Alive 不是 Live
-    assert M.version_tags("心墙 (Live版)") == {"live"}            # 网易云常见写法：汉字紧贴英文，\b 会漏掉
+    assert M.version_tags("心墙 (Live版)") == {"live"}            # 音乐平台常见写法：汉字紧贴英文，\b 会漏掉
     assert M.version_tags("Silver Lining") == set()              # ver 在单词内部不算 version
     assert M.version_tags("Song (Acoustic Remix)") == {"acoustic", "remix"}
     assert M.version_tags("I Wish You Would (Voice Memo)") == {"voicememo"}

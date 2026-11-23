@@ -27,7 +27,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
 
   // ---- 页面结构：推荐在最前并作为默认页；下载与定时任务合并；待处理卡片与角标
   const navTabs = [...d.querySelectorAll('#nav button')].map(b => b.dataset.tab);
-  check('导航顺序：推荐 / 网易云下载 / 任务记录 / 设置', navTabs.join(',') === 'rec,dl,jobs,set', navTabs.join(','));
+  check('导航顺序：推荐 / 音乐平台下载 / 任务记录 / 设置', navTabs.join(',') === 'rec,dl,jobs,set', navTabs.join(','));
   check('推荐联动已启用时，默认打开「推荐」', $('p-rec').classList.contains('on') && !$('p-dl').classList.contains('on'));
   await sleep(600);
   check('「需要你处理」卡片列出待选择候选', !$('todoCard').classList.contains('hide') && txt('todoList').includes('待选择'), txt('todoList'));
@@ -36,7 +36,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('点「去选择」直达列表并筛到「待选择」', !$('rv-list').classList.contains('hide') && txt('lstStates').includes('待选择') && $('lstItems').children.length >= 1 && !txt('lstStates').includes('下载失败'), txt('lstStates'));
   await w.eval("recShow('dash')");
   w.showTab('dl'); await sleep(300);
-  check('「网易云下载」默认是手动下载', !$('dv-manual').classList.contains('hide') && $('dv-auto').classList.contains('hide'));
+  check('「音乐平台下载」默认是手动下载', !$('dv-manual').classList.contains('hide') && $('dv-auto').classList.contains('hide'));
   d.querySelector('#dlNav button[data-v="auto"]').click(); await sleep(300);
   check('切到「定时任务」子页', $('dv-manual').classList.contains('hide') && !$('dv-auto').classList.contains('hide') && !!$('schedList'));
   w.showTab('auto'); await sleep(200);
@@ -63,7 +63,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('Weekly Jams 列出 7 首', rows.length === 7, `${rows.length}`);
   const t = txt('lstItems');
   check('含各种状态', ['主库已有', '试听库', '未找到', '下载失败'].every(x => t.includes(x)), '');
-  check('原因中文化', t.includes('网易云没有这首') && t.includes('只有 MP3'), '');
+  check('原因中文化', t.includes('音乐平台没有这首') && t.includes('只有 MP3'), '');
   check('有「重试」按钮', [...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '重试'));
   check('试听库歌曲有「保留」按钮', [...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '保留'));
   check('状态筛选条', txt('lstStates').includes('全部 7'), txt('lstStates'));

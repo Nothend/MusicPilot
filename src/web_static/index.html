@@ -151,7 +151,7 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <h2>扫码登录</h2>
   <div id="loginMsg" class="sub" style="margin-bottom:8px"></div>
   <div class="qrrow"><div id="qr"></div>
-    <div><div id="qrMsg">请用网易云音乐 App 扫码</div>
+    <div><div id="qrMsg">请用音乐平台 App 扫码</div>
     <div class="sub">App → 我的 → 左上角扫一扫</div>
     <button class="ghost sm" onclick="qrStart()" style="margin-top:8px">刷新二维码</button></div></div>
 </div>
@@ -159,12 +159,12 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
 <div id="main" class="hide">
 <div class="nav" id="nav">
   <button data-tab="rec">推荐<span id="navRec"></span></button>
-  <button data-tab="dl">网易云下载</button>
+  <button data-tab="dl">音乐平台下载</button>
   <button data-tab="jobs">任务记录<span id="navJobs"></span></button>
   <button data-tab="set">设置</button>
 </div>
 
-<!-- ============ 网易云下载（手动下载 / 定时任务）============ -->
+<!-- ============ 音乐平台下载（手动下载 / 定时任务）============ -->
 <div class="panel" id="p-dl">
 <div class="seg" id="dlNav" style="margin-bottom:12px">
   <button data-v="manual" class="on">手动下载</button><button data-v="auto">定时任务</button>
@@ -292,7 +292,7 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
     <div class="hint" id="dlSrcState" style="margin-left:0"></div>
     <div class="f" id="dlSrcRow"><span class="lb">用哪个账号下载</span>
       <div class="c"><select id="dlSrc"></select></div></div>
-    <div class="hint" id="dlSrcTip">歌单/每日推荐仍用当前登录账号获取；仅「下载」改用借用账号的黑胶 VIP 权限。借用账号必须是黑胶 VIP。</div>
+    <div class="hint" id="dlSrcTip">歌单/每日推荐仍用当前登录账号获取；仅「下载」改用借用账号的VIP 权限。借用账号必须是VIP。</div>
     <div class="acts" id="dlSrcActs"><button class="ghost" id="borrowRm" onclick="borrowRemove()">移除借用账号</button>
       <button class="ghost" id="borrowScanBtn" onclick="borrowScan()">扫码添加</button>
       <button class="ghost" id="borrowPasteBtn" onclick="$('borrowDlg').showModal()">粘贴导入</button>
@@ -459,13 +459,13 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
 </dialog>
 <dialog id="borrowDlg">
   <h2 style="font-size:15px;margin:0 0 6px">粘贴导入借用账号</h2>
-  <div class="sub" style="margin-bottom:8px">粘贴对方 <code>web_state.json</code> 里的 <b>account</b> 节点（整个文件、account 节点或纯 cookie 都可以）。会向网易云重新校验，非黑胶 VIP 会被拒绝。</div>
+  <div class="sub" style="margin-bottom:8px">粘贴对方 <code>web_state.json</code> 里的 <b>account</b> 节点（整个文件、account 节点或纯 cookie 都可以）。会向音乐平台重新校验，非VIP 会被拒绝。</div>
   <textarea id="borrowText" rows="8" style="width:100%;box-sizing:border-box;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:12px/1.4 monospace" placeholder='{"cookies": {"MUSIC_U": "..."}, ...}'></textarea>
   <div class="acts"><button class="ghost" onclick="$('borrowDlg').close()">取消</button><button onclick="borrowImport()">导入</button></div>
 </dialog>
 <dialog id="borrowQrDlg">
   <h2 style="font-size:15px;margin:0 0 6px">扫码添加借用账号</h2>
-  <div class="sub" style="margin-bottom:8px">请让<b>借用账号本人</b>用网易云音乐 App 扫码确认（必须是黑胶 VIP）。</div>
+  <div class="sub" style="margin-bottom:8px">请让<b>借用账号本人</b>用音乐平台 App 扫码确认（必须是VIP）。</div>
   <div class="qrrow"><div id="bqr" style="width:232px;height:232px;background:#fff;border-radius:8px;line-height:0"></div>
     <div><div id="bqrMsg">正在生成二维码…</div></div></div>
   <div class="acts"><button class="ghost" onclick="borrowScanStop()">关闭</button></div>
@@ -592,15 +592,15 @@ const ST_CLS = {LOCAL_MAIN: 'ok', LOCAL_DISCOVERY: 'ok', PROMOTED: 'ok', PROMOTI
 const KIND_ZH = {sync: '推荐同步', promote: '红心转正', cleanup: '过期清理', reindex: '同步索引', love: '红心同步', love_preview: '红心预览', dedup: '重复歌曲处理'};
 const RUN_ZH = {running: '运行中', done: '完成', failed: '失败', paused: '已暂停', interrupted: '被中断'};
 const RUN_CLS = {running: 'run', done: 'ok', failed: 'bad', paused: 'warn', interrupted: 'warn'};
-const REASON_ZH = {dup_resolved: '与主库重复，已保留主库那份', variant: '库里是电台版/单曲版，建议尽快替换为原版', not_found: '网易云没有这首', only_mp3: '只有 MP3（库只要无损）', no_copyright: '无版权/已下架', cooldown: '冷却期内不重复搜索',
+const REASON_ZH = {dup_resolved: '与主库重复，已保留主库那份', variant: '库里是电台版/单曲版，建议尽快替换为原版', not_found: '音乐平台没有这首', only_mp3: '只有 MP3（库只要无损）', no_copyright: '无版权/已下架', cooldown: '冷却期内不重复搜索',
   over_limit: '超出最大新下载数', promote_conflict: '主库已有同名文件，未转正', promote_error: '转正出错，将自动重试', expired: '试听期满已清理',
   exception: '处理出错', multiple: '本地有多个候选', download: '下载失败', api: '接口错误', invalid: '文件校验失败'};
 const STAT = {  // 统计项：[中文名, 说明（鼠标悬停显示）]
   recommended: ['推荐', 'ListenBrainz 歌单里的歌曲总数'],
-  downloaded: ['新下载', '本次从网易云新下载到试听库的无损歌曲'],
+  downloaded: ['新下载', '本次从音乐平台新下载到试听库的无损歌曲'],
   local_main: ['主库已有', '主库里已经有这首，无需下载'],
   local_discovery: ['试听库已有', '试听库里已经有这首，无需下载'],
-  not_found: ['网易云未找到', '在网易云里没搜到这首歌'],
+  not_found: ['音乐平台未找到', '在音乐平台里没搜到这首歌'],
   failed: ['失败', '下载或提交失败，下次会重试'],
   skipped: ['已跳过', '超出「最大新下载数」，本轮不下载'],
   multiple: ['待选择', '本地有多首难以区分的候选，需要你在「推荐」里手动选择是哪一首'],
@@ -941,7 +941,7 @@ function dlShow(v) {
 }
 document.querySelectorAll('#dlNav button').forEach(b => b.onclick = () => dlShow(b.dataset.v));
 function showTab(t, push) {
-  if (t === 'auto') { dlView = 'auto'; t = 'dl'; }                 // 兼容旧链接 #auto（自动下载已并入「网易云下载 → 定时任务」）
+  if (t === 'auto') { dlView = 'auto'; t = 'dl'; }                 // 兼容旧链接 #auto（自动下载已并入「音乐平台下载 → 定时任务」）
   if (!TABS.includes(t)) t = defaultTab;
   tab = t;
   TABS.forEach(x => $('p-' + x).classList.toggle('on', x === t));
@@ -973,7 +973,7 @@ function renderAcct() {
   const a = S.account, box = $('acctChip');
   if (!a.logged_in) { box.innerHTML = ''; return; }
   if (a.invalid) { box.innerHTML = '<span class="badge b-bad">登录已失效</span>'; return; }
-  const badge = a.is_vip ? '<span class="badge b-vip">黑胶 VIP</span>' : '<span class="badge b-mp3">非 VIP · 仅 MP3</span>';
+  const badge = a.is_vip ? '<span class="badge b-vip">VIP</span>' : '<span class="badge b-mp3">非 VIP · 仅 MP3</span>';
   const D = (S.settings && S.settings.download_account) || {};
   // 登录账号已是 VIP 时直接用它下载，借用账号不生效，账号条也就不显示借用
   const borrowed = !a.is_vip && S.settings && S.settings.download_source === 'borrowed' && D.exists;
@@ -995,7 +995,7 @@ async function qrStart() {
     const r = await api('/api/qr/new', {});
     if (gen !== qrGen) return;  // 期间已有更新的二维码请求，丢弃本次结果
     qrKey = r.key; $('qr').innerHTML = '<img alt="登录二维码" src="data:image/png;base64,' + r.png + '">';
-    $('qrMsg').textContent = '请用网易云音乐 App 扫码';
+    $('qrMsg').textContent = '请用音乐平台 App 扫码';
     qrTimer = setInterval(qrPoll, 2000);
   } catch (e) { if (gen === qrGen) { $('qrMsg').textContent = e.message + '（可点「刷新二维码」重试）'; qrKey = null; } }
   finally { if (gen === qrGen) qrLoading = false; }
@@ -1012,7 +1012,7 @@ async function qrPoll() {
     if (r.code === 803) { toast('登录成功'); stopQr(); await loadState(true); await initData(); }
     else if (r.code === 802) $('qrMsg').textContent = '已扫码，请在手机上确认登录';
     else if (r.code === 800) { $('qrMsg').textContent = '二维码已过期，正在刷新…'; qrPolling = false; qrStart(); }
-    else if (r.code === 801) $('qrMsg').textContent = '请用网易云音乐 App 扫码';
+    else if (r.code === 801) $('qrMsg').textContent = '请用音乐平台 App 扫码';
     else $('qrMsg').textContent = r.message || '登录失败，请刷新二维码';
   } catch (e) { if (gen === qrGen) $('qrMsg').textContent = e.message; }
   finally { qrPolling = false; }
@@ -1113,22 +1113,22 @@ async function download(selected) {
 function renderDlSrc() {
   const s = S.settings, D = s.download_account || {}, sel = $('dlSrc');
   sel.innerHTML = '<option value="self">使用当前登录账号</option>' +
-    (D.exists ? `<option value="borrowed">使用借用账号：${esc(D.nickname)}（黑胶 VIP）</option>` : '');
+    (D.exists ? `<option value="borrowed">使用借用账号：${esc(D.nickname)}（VIP）</option>` : '');
   sel.value = s.download_source === 'borrowed' && D.exists ? 'borrowed' : 'self';
   const st = $('dlSrcState');
-  // 登录账号本身就是黑胶 VIP：直接用它下载，不需要借用账号——只留说明（和已有借用账号时的"移除"），其余控件隐藏
+  // 登录账号本身就是VIP：直接用它下载，不需要借用账号——只留说明（和已有借用账号时的"移除"），其余控件隐藏
   const vip = !!(S.account && S.account.is_vip);
   ['dlSrcRow', 'dlSrcTip', 'borrowScanBtn', 'borrowPasteBtn', 'borrowSaveBtn'].forEach(id => $(id).classList.toggle('hide', vip));
   $('borrowRm').classList.toggle('hide', !D.exists);
   $('dlSrcActs').classList.toggle('hide', vip && !D.exists);
   if (vip) {
-    st.textContent = '登录账号「' + S.account.nickname + '」已是黑胶 VIP，直接用它下载，无需借用账号。' + (!D.exists ? '' :
+    st.textContent = '登录账号「' + S.account.nickname + '」已是VIP，直接用它下载，无需借用账号。' + (!D.exists ? '' :
       '已保存的借用账号「' + D.nickname + '」暂不使用' + (s.download_source === 'borrowed' ? '（登录账号的 VIP 到期后会自动改用它）' : '') + '。');
     return;
   }
-  if (!D.exists) st.textContent = '当前：用登录账号下载（非 VIP，只能下载 MP3）。想下无损？添加一个黑胶 VIP 借用账号';
+  if (!D.exists) st.textContent = '当前：用登录账号下载（非 VIP，只能下载 MP3）。想下无损？添加一个VIP 借用账号';
   else if (D.invalid) st.textContent = '⚠ 借用账号「' + D.nickname + '」登录已失效，选它下载的任务会失败。请重新扫码添加或粘贴导入';
-  else if (s.download_source === 'borrowed') st.textContent = '当前：用借用账号「' + D.nickname + '」的黑胶 VIP 下载（列表仍取自登录账号）';
+  else if (s.download_source === 'borrowed') st.textContent = '当前：用借用账号「' + D.nickname + '」的VIP 下载（列表仍取自登录账号）';
   else st.textContent = '当前：用登录账号下载。已添加借用账号「' + D.nickname + '」，可在上面切换';
 }
 async function saveDlSrc() { await run(async () => { S.settings = await api('/api/settings', {download_source: $('dlSrc').value}); renderSettings(); renderAcct(); toast('已保存'); }); }
@@ -1153,7 +1153,7 @@ async function borrowScan() {
     const r = await api('/api/qr/new', {purpose: 'borrow'});
     if (gen !== bGen) return;
     bKey = r.key; $('bqr').innerHTML = '<img alt="二维码" style="width:232px;height:232px;display:block;image-rendering:pixelated" src="data:image/png;base64,' + r.png + '">';
-    $('bqrMsg').textContent = '请用借用账号的网易云 App 扫码';
+    $('bqrMsg').textContent = '请用借用账号的音乐平台 App 扫码';
     bTimer = setInterval(async () => {
       if (!bKey || document.hidden) return;
       const g = bGen, k = bKey;
@@ -1312,7 +1312,7 @@ function itemRow(t) {
     <div><div class="nm">${esc(who)}${who ? ' - ' : ''}${esc(t.name)} <span class="sub">${esc(t.album || '')}</span></div>
       ${t.status === 'failed' ? `<div class="why">${esc(KIND[t.kind] || '失败')}：${esc(t.reason)}</div>`
         : (t.status === 'skipped' ? `<div class="sub">${esc(t.reason)}</div>` : '')}</div>
-    ${t.id ? `<a class="lnk" href="${songUrl(t.id)}" target="_blank" rel="noopener noreferrer">去网易云查看 ↗</a>` : ''}</div>`;
+    ${t.id ? `<a class="lnk" href="${songUrl(t.id)}" target="_blank" rel="noopener noreferrer">去音乐平台查看 ↗</a>` : ''}</div>`;
 }
 function jobBody(j) {
   const d = jDetail[j.id], f = jFilter[j.id] || (j.counts.failed ? 'failed' : 'all');

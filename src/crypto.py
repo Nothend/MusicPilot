@@ -1,4 +1,4 @@
-"""网易云 eapi 请求参数加密（AES-128-ECB 签名）。"""
+"""音乐平台 eapi 请求参数加密（AES-128-ECB 签名）。"""
 
 import json
 import urllib.parse

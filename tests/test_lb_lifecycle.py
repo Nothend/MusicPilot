@@ -28,7 +28,7 @@ class DiskAdapter:
         n = len(self.calls)
         p = make_flac(Path(output_dir) / f"{artist} - {title}.flac", artist, title,
                       extra={"album": "专辑", "tracknumber": str(n), "date": "2026-01-01"})
-        return AdapterResult(True, str(p), netease_id=n, quality="lossless", file_type="flac")
+        return AdapterResult(True, str(p), platform_id=n, quality="lossless", file_type="flac")
 
 
 def test_full_lifecycle(tmp_path):

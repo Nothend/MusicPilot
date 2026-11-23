@@ -10,11 +10,11 @@ import requests
 
 from constants import APIConstants
 from crypto import CryptoUtils
-from http_client import SESSION, HTTPClient, APIException, netease_headers
+from http_client import SESSION, HTTPClient, APIException, platform_headers
 from utils import timestamp_to_date
 
 
-class NeteaseMusic:
+class PlatformMusic:
     def __init__(self, cookies: Dict[str, str]):
         self.http_client = HTTPClient()
         self.crypto_utils = CryptoUtils()
@@ -23,8 +23,8 @@ class NeteaseMusic:
 
     @staticmethod
     def _default_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
-        """各接口通用请求头，统一委托给 http_client.netease_headers（单一来源）。"""
-        return netease_headers(extra)
+        """各接口通用请求头，统一委托给 http_client.platform_headers（单一来源）。"""
+        return platform_headers(extra)
 
     def get_user_playlist(self, uid: int, cookies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """获取用户的歌单列表详情
@@ -85,7 +85,7 @@ class NeteaseMusic:
                         'track_update_time': timestamp_to_date(playlist.get('trackUpdateTime', '')),
                     })
 
-                # 网易云用 more 标记是否还有下一页；再以"本页不足一页"兜底终止
+                # 音乐平台用 more 标记是否还有下一页；再以"本页不足一页"兜底终止
                 if not result.get('more') or len(playlists) < PAGE_SIZE:
                     break
                 offset += PAGE_SIZE
@@ -250,8 +250,8 @@ class NeteaseMusic:
         self.logger.warning(f"未找到名称为 {tdl} 的播放列表")
         return None
     
-    def netease_encrypt_id(self, id_str: str) -> str:
-        """网易云加密图片ID算法
+    def platform_encrypt_id(self, id_str: str) -> str:
+        """音乐平台加密图片ID算法
         
         Args:
             id_str: 图片ID字符串
@@ -325,7 +325,7 @@ class NeteaseMusic:
             return {'valid': False, 'is_vip': False}
 
     def get_pic_url(self, pic_id: Optional[int], size: int = 300) -> str:
-        """获取网易云加密歌曲/专辑封面直链
+        """获取音乐平台加密歌曲/专辑封面直链
         
         Args:
             pic_id: 封面ID
@@ -337,7 +337,7 @@ class NeteaseMusic:
         if pic_id is None:
             return ''
         
-        enc_id = self.netease_encrypt_id(str(pic_id))
+        enc_id = self.platform_encrypt_id(str(pic_id))
         return f'https://p3.music.126.net/{enc_id}/{pic_id}.jpg?param={size}y{size}'
 
     

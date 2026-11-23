@@ -163,7 +163,7 @@ def test_download_records_and_attempt_count(db):
     item = lb_repo.items_of_batch(db, bid)[0]["id"]
     assert lb_repo.download_attempts(db, item) == 0
     lb_repo.record_download(db, item, 1, ok=False, error_kind="download", error="x")
-    lb_repo.record_download(db, item, 2, ok=True, netease_id=5, path="/p", quality="lossless", file_type="flac")
+    lb_repo.record_download(db, item, 2, ok=True, platform_id=5, path="/p", quality="lossless", file_type="flac")
     assert lb_repo.download_attempts(db, item) == 2
 
 
@@ -191,3 +191,45 @@ def test_playlist_records(db):
     assert [r["nd_playlist_id"] for r in rows] == ["nd-1"]
     lb_repo.mark_playlist_deleted(db, rows[0]["id"])
     assert lb_repo.live_playlists_of_batch(db, bid) == []
+
+
+def test_v9_fixes_batch_date_and_registers_playlist_rename():
+    import sqlite3
+    import db as dbmod
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    for m in dbmod.MIGRATIONS[:8]:
+        m(conn)
+    conn.execute("INSERT INTO recommendation_batches(id,type,lb_playlist_mbid,lb_title,lb_date,fetched_at,status,total) "
+                 "VALUES(1,'daily','m1','Daily Jams for u, 2026-11-23 Mon','2026-11-22T16:01:10+00:00','t','active',1)")
+    conn.execute("INSERT INTO recommendation_batches(id,type,lb_playlist_mbid,lb_title,lb_date,fetched_at,status,total) "
+                 "VALUES(2,'weekly_jams','m2','Weekly Jams for u, week of 2026-09-14 Mon','2026-09-14T00:12:01+00:00','t','active',1)")
+    for bid, name in ((1, "LB Daily Jams 2026-11-22"), (2, "LB Weekly Jams 2026-09-14")):
+        conn.execute("INSERT INTO lb_playlists(batch_id,name,nd_playlist_id,song_count,created_at) VALUES(?,?,?,1,'t')",
+                     (bid, name, f"p{bid}"))
+    dbmod._v9(conn)
+    dates = {r["id"]: r["lb_date"] for r in conn.execute("SELECT id, lb_date FROM recommendation_batches")}
+    assert dates == {1: "2026-11-23", 2: "2026-09-14"}
+    ren = {r["batch_id"]: r["rename_to"] for r in conn.execute("SELECT batch_id, rename_to FROM lb_playlists")}
+    assert ren == {1: "LB Daily Jams 2026-11-23", 2: None}     # 日期没变的不动
+
+
+def test_apply_renames_calls_navidrome_and_clears_flag(tmp_path):
+    import db as dbmod
+    import lb_playlist
+    import lb_repo
+    d = dbmod.Database(tmp_path / "x.sqlite"); d.migrate()
+    with d.transaction() as c:
+        c.execute("INSERT INTO recommendation_batches(id,type,lb_playlist_mbid,lb_title,lb_date,fetched_at,status,total) "
+                  "VALUES(1,'daily','m1','t','2026-11-23','t','active',1)")
+        c.execute("INSERT INTO lb_playlists(batch_id,name,nd_playlist_id,song_count,created_at,rename_to) "
+                  "VALUES(1,'LB Daily Jams 2026-11-22','p1',1,'t','LB Daily Jams 2026-11-23')")
+    calls = []
+
+    class ND:
+        def rename_playlist(self, pid, name):
+            calls.append((pid, name))
+    assert lb_playlist.apply_renames(d, ND(), lambda *a, **k: None) == 1
+    assert calls == [("p1", "LB Daily Jams 2026-11-23")]
+    assert lb_repo.pending_renames(d) == []
+    assert lb_repo.live_playlists_of_batch(d, 1)[0]["name"] == "LB Daily Jams 2026-11-23"

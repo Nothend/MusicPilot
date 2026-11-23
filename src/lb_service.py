@@ -3,7 +3,7 @@
 - 所有任务经 TaskManager.run_async 启动：全局互斥（已有任务在跑立刻 TaskBusy，不排队），结果与日志入库；
 - 门禁：总开关 `enabled` 关闭时，会改动库/下载/写 LB 的任务一律拒绝（只读预览与「同步索引」不受限）；
   配置不全时给出明确提示，而不是跑一半失败；
-- 网易云账号选择与现有下载任务一致：登录账号是黑胶 VIP 就用它；否则必须有有效的借用 VIP 账号（推荐联动只要无损）；
+- 音乐平台账号选择与现有下载任务一致：登录账号是VIP 就用它；否则必须有有效的借用 VIP 账号（推荐联动只要无损）；
 - 通知（Bark）：失败/暂停/有实质变化（新下载、转正、过期、提交红心）才发，没变化的定时空跑不打扰。
 """
 
@@ -21,7 +21,7 @@ import lb_promote
 import lb_queries
 import lb_settings
 from db import Database
-from lb_adapter import NeteaseAdapter
+from lb_adapter import PlatformAdapter
 from lb_client import LBError, ListenBrainzClient
 from local_index import sync_index
 from nd_client import NavidromeClient
@@ -43,34 +43,34 @@ class NotReady(ValueError):
 
 
 def default_adapter_factory(store, settings: Dict[str, Any], request_delay: float):
-    """用现有 Web 的网易云账号装配下载渠道：登录账号是 VIP 就直接用；否则要有效的借用 VIP 账号。推荐联动只要无损。"""
+    """用现有 Web 的音乐平台账号装配下载渠道：登录账号是 VIP 就直接用；否则要有效的借用 VIP 账号。推荐联动只要无损。"""
     from downloader import SongDownloader
     from web_common import download_account_of, effective_quality
-    from web_netease import WebNetease
+    from web_platform import WebPlatform
 
     state = store.get()
     account = state.get("account")
     if not account or not account.get("cookies"):
-        raise NotReady("请先在「下载」页扫码登录网易云账号")
-    wn = WebNetease(account["cookies"])
+        raise NotReady("请先在「下载」页扫码登录音乐平台账号")
+    wn = WebPlatform(account["cookies"])
     info = wn.account_info()
     if info is None:
-        raise NotReady("网易云登录已失效，请重新扫码")
+        raise NotReady("音乐平台登录已失效，请重新扫码")
     cookies, api = account["cookies"], wn.api
     if not info["is_vip"]:
         pick = download_account_of(state)
         borrowed = pick["account"] if pick["kind"] == "borrowed" else None
         if not borrowed or not borrowed.get("cookies"):
-            raise NotReady("推荐联动只下载无损，需要黑胶 VIP：请登录 VIP 账号，或在「设置 → 下载账号」添加借用的 VIP 账号并选用")
-        bw = WebNetease(borrowed["cookies"])
+            raise NotReady("推荐联动只下载无损，需要VIP：请登录 VIP 账号，或在「设置 → 下载账号」添加借用的 VIP 账号并选用")
+        bw = WebPlatform(borrowed["cookies"])
         binfo = bw.account_info()
         if binfo is None:
             raise NotReady("借用账号登录已失效，请在设置里重新添加")
         if not binfo["is_vip"]:
-            raise NotReady("借用账号已不是黑胶 VIP，请更换")
+            raise NotReady("借用账号已不是VIP，请更换")
         cookies, api = borrowed["cookies"], bw.api
     quality = effective_quality(state["settings"], True)
-    return NeteaseAdapter(cookies, SongDownloader(cookies, api), quality, request_delay=request_delay)
+    return PlatformAdapter(cookies, SongDownloader(cookies, api), quality, request_delay=request_delay)
 
 
 class LbService:

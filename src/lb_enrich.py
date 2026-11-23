@@ -1,6 +1,6 @@
 """元数据补全（刮削）扩展点：给将来的其它下载渠道预留。
 
-背景：网易云下载器自己已经写好了完整标签（歌手/歌名/专辑/年份/歌词/封面），所以目前没有任何补全器在用。
+背景：音乐平台下载器自己已经写好了完整标签（歌手/歌名/专辑/年份/歌词/封面），所以目前没有任何补全器在用。
 以后若接入的下载渠道产出的文件缺标签，就实现一个 `Enricher`，传给对应渠道的适配器即可，无需改流水线。
 
 时机（重要）：补全只发生在**下载后、校验前**，对象是暂存目录里的文件。不要在文件进入 Navidrome 之后再改标签：
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class TagContext:
     """补全器可参考的「这首歌应该是什么」：来自 ListenBrainz 推荐（比文件本身的标签更可信）。"""
-    source: str                                   # 下载渠道名，如 "netease"
+    source: str                                   # 下载渠道名，如 "platform"
     artist: str
     title: str
     album: str = ""
@@ -86,7 +86,7 @@ def run_enrichers(path: Path, ctx: TagContext, enrichers: Sequence[Enricher],
 
 @runtime_checkable
 class DownloadChannel(Protocol):
-    """下载渠道：流水线只依赖这个形状。网易云适配器即其一；将来新增渠道实现同样的方法即可。"""
+    """下载渠道：流水线只依赖这个形状。音乐平台适配器即其一；将来新增渠道实现同样的方法即可。"""
 
     def download_song(self, artist: str, title: str, output_dir, *, artists=None, album: str = "",
                       duration_ms: Optional[int] = None):

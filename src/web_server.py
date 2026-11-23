@@ -34,7 +34,7 @@ from web_common import (base_download_dir, download_account_of, effective_bark_a
                         list_subdirs, merge_library, normalize_source,
                         parse_account_paste, resolve_subdir, test_library)
 from web_jobs import JobManager
-from web_netease import (QR_EXPIRED, QR_OK, WebNetease, qr_check, qr_create, qr_login_url)
+from web_platform import (QR_EXPIRED, QR_OK, WebPlatform, qr_check, qr_create, qr_login_url)
 from web_scheduler import Scheduler
 from lb_scheduler import LbScheduler
 from lb_service import LbService
@@ -73,7 +73,7 @@ class App:
         self._qr_purpose: Dict[str, str] = {}   # 二维码 key -> "login"(默认) | "borrow"(添加借用账号)
         self._qr_lock = threading.Lock()
         self._lb_lock = threading.Lock()
-        self._acct_cache = (0.0, None)  # (时间戳, 账号资料)，避免页面频繁刷新打网易云接口
+        self._acct_cache = (0.0, None)  # (时间戳, 账号资料)，避免页面频繁刷新打音乐平台接口
 
     def _bark_notify(self, title: str, body: str) -> bool:
         from bark import BarkNotifier
@@ -90,11 +90,11 @@ class App:
         self.lb_scheduler.start()
 
     # ------------------------------------------------------------ 账号
-    def wn(self) -> WebNetease:
+    def wn(self) -> WebPlatform:
         account = self.store.get().get("account")
         if not account or not account.get("cookies"):
             raise PermissionError("尚未登录，请先扫码登录")
-        return WebNetease(account["cookies"])
+        return WebPlatform(account["cookies"])
 
     def account_view(self, refresh: bool = False) -> Dict[str, Any]:
         account = self.store.get().get("account")
@@ -103,7 +103,7 @@ class App:
         ts, cached = self._acct_cache
         if refresh or cached is None or time.time() - ts > 60:
             try:
-                info = WebNetease(account["cookies"]).account_info()
+                info = WebPlatform(account["cookies"]).account_info()
             except Exception as e:
                 logger.warning(f"刷新账号信息失败，沿用缓存: {e}")
                 info = cached  # 网络抖动不应把用户踢成未登录
@@ -151,16 +151,16 @@ class App:
             purpose = self._qr_purpose.get(key, "login")
         if result["code"] == QR_OK:
             cookies = result["cookies"]
-            info = WebNetease(cookies).account_info()
+            info = WebPlatform(cookies).account_info()
             if info is None:
                 return {"code": 500, "message": "登录成功但无法获取账号信息，请重试"}
             if purpose == "borrow":
-                # 借用账号必须是黑胶 VIP：不是就拒绝，不保存
+                # 借用账号必须是VIP：不是就拒绝，不保存
                 if not info["is_vip"]:
                     with self._qr_lock:
                         self._qr.pop(key, None)
                         self._qr_purpose.pop(key, None)
-                    return {"code": 500, "message": f"账号「{info['nickname']}」不是黑胶 VIP，无法作为借用账号"}
+                    return {"code": 500, "message": f"账号「{info['nickname']}」不是VIP，无法作为借用账号"}
                 self._save_download_account(cookies, info)
                 message = "借用账号已添加"
             else:
@@ -192,16 +192,16 @@ class App:
         self.store.update(apply)
 
     def borrow_import(self, text: str) -> Dict[str, Any]:
-        """粘贴导入借用账号。不信任粘贴内容自带的昵称/VIP，一律用 cookie 向网易云重新校验；非 VIP 拒绝。"""
+        """粘贴导入借用账号。不信任粘贴内容自带的昵称/VIP，一律用 cookie 向音乐平台重新校验；非 VIP 拒绝。"""
         cookies = parse_account_paste(text)
         try:
-            info = WebNetease(cookies).account_info()
+            info = WebPlatform(cookies).account_info()
         except APIException as e:
-            raise ValueError(f"校验借用账号时连接网易云失败，请稍后重试：{e}")
+            raise ValueError(f"校验借用账号时连接音乐平台失败，请稍后重试：{e}")
         if info is None:
             raise ValueError("该登录凭证已失效或无效，请重新获取")
         if not info["is_vip"]:
-            raise ValueError(f"账号「{info['nickname']}」不是黑胶 VIP，无法作为借用账号")
+            raise ValueError(f"账号「{info['nickname']}」不是VIP，无法作为借用账号")
         self._save_download_account(cookies, info)
         return self.settings_view()
 
@@ -241,7 +241,7 @@ class App:
 
         def is_date(name: str) -> bool:
             return isinstance(name, str) and len(name) == 8 and name.isdigit()
-        # 日期命名的歌单排前面（新的在前），其余保持网易云原顺序
+        # 日期命名的歌单排前面（新的在前），其余保持音乐平台原顺序
         dated = sorted((p for p in items if is_date(p["name"])), key=lambda p: p["name"], reverse=True)
         others = [p for p in items if not is_date(p["name"])]
         return {"playlists": [{"id": p["id"], "name": p["name"], "count": p["track_count"],
@@ -471,7 +471,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(e), "busy": True, "running": e.running}, 409)
         except ValueError as e:
             self._json({"error": str(e)}, 400)
-        except APIException as e:  # 网易云接口返回错误（如 ID 不存在/风控），属上游问题
+        except APIException as e:  # 音乐平台接口返回错误（如 ID 不存在/风控），属上游问题
             self._json({"error": str(e)}, 502)
         except Exception as e:
             logger.error(f"请求处理异常 {method} {path}: {e}", exc_info=True)

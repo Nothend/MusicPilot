@@ -28,7 +28,7 @@ from task_manager import RunHandle
 
 logger = logging.getLogger(__name__)
 
-SEARCH_MIN_INTERVAL = 2.0     # 网易云搜索按 2 秒节奏最稳（实测 0.4 秒会被限流）
+SEARCH_MIN_INTERVAL = 2.0     # 音乐平台搜索按 2 秒节奏最稳（实测 0.4 秒会被限流）
 FAILED_RETRY_STEP_MIN = 30    # 下载失败后第 n 次重试的等待：30 分钟 × n
 SCAN_TIMEOUT_S = 600
 
@@ -39,7 +39,7 @@ class SyncDeps:
     settings: Dict[str, Any]
     lb: Any                      # ListenBrainzClient
     nd: Any                      # NavidromeClient
-    adapter: Any                 # NeteaseAdapter
+    adapter: Any                 # PlatformAdapter
     handle: RunHandle
     request_delay: float = SEARCH_MIN_INTERVAL
     sleep: Callable[[float], None] = time.sleep
@@ -92,6 +92,8 @@ def run_sync(d: SyncDeps) -> Dict[str, Any]:
     if removed:
         h.log(f"已清理暂存区残留 {removed} 个文件")
 
+    lb_playlist.apply_renames(d.db, d.nd, h.log)
+
     # 1) 取最新歌单入库（不重新拉取已入库的批次）
     fetch_new_batches(d)
 
@@ -128,7 +130,7 @@ def run_sync(d: SyncDeps) -> Dict[str, Any]:
 
     if d.paused:
         h.status = "paused"
-        h.summary = "网易云搜索被限流，已暂停；未处理的歌曲保持待处理，下次运行继续"
+        h.summary = "音乐平台搜索被限流，已暂停；未处理的歌曲保持待处理，下次运行继续"
         h.log(h.summary, "WARNING")
     return h.stats
 
@@ -266,7 +268,7 @@ def _process_item(d: SyncDeps, it, index: LocalIndex, cap: int, new_ok: int) -> 
     res = d.adapter.download_song(it["artist"], it["title"], s["dirs"]["discovery"],
                                   artists=[a for a in json.loads(it["artists_json"] or "[]") if a],
                                   album=it["album"], duration_ms=it["duration_ms"])
-    lb_repo.record_download(db, it["id"], attempt, ok=res.success, netease_id=res.netease_id, error_kind=res.error_kind,
+    lb_repo.record_download(db, it["id"], attempt, ok=res.success, platform_id=res.platform_id, error_kind=res.error_kind,
                             error=res.error, path=res.path or "", quality=res.quality, file_type=res.file_type, now=d.now())
     d.sleep(max(d.request_delay, SEARCH_MIN_INTERVAL))     # 每首搜索之间留足间隔
 

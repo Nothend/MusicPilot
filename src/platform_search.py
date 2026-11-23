@@ -1,4 +1,4 @@
-"""网易云歌曲搜索 + 选歌（新增模块，不改 netease.py）。
+"""音乐平台歌曲搜索 + 选歌（新增模块，不改 music_api.py）。
 
 搜索接口 `cloudsearch/pc` 是普通表单 POST（无需 eapi 签名），与现有取歌单/歌曲详情同一路数，
 复用共享 SESSION（带重试退避与设备 cookie）。
@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from constants import APIConstants
-from http_client import SESSION, APIException, netease_headers
+from http_client import SESSION, APIException, platform_headers
 from matcher import LocalFile, LocalIndex, Target, compact, fold, match
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ def _search_once(cookies: Dict[str, str], keyword: str, limit: int, session: req
     try:
         r = session.post(APIConstants.SEARCH_API,
                          data={"s": keyword, "type": 1, "limit": limit, "offset": 0, "total": "true"},
-                         headers=netease_headers(),
+                         headers=platform_headers(),
                          cookies={**APIConstants.DEFAULT_COOKIES, **(cookies or {})}, timeout=30)
         r.raise_for_status()
         data = r.json()

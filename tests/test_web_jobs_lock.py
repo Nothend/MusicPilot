@@ -1,4 +1,4 @@
-"""现有「网易云下载任务队列」与推荐任务共用全局锁。"""
+"""现有「音乐平台下载任务队列」与推荐任务共用全局锁。"""
 import threading
 import time
 
@@ -54,7 +54,7 @@ def test_recommend_task_is_rejected_while_a_download_job_is_running(setup):
     jm._run = slow_run
     jm.submit({"type": "daily"}, "")
     assert inside.wait(5)
-    with pytest.raises(TaskBusy, match="网易云下载任务"):
+    with pytest.raises(TaskBusy, match="音乐平台下载任务"):
         tm.begin("sync", "manual")
     leave.set()
     assert wait_for(lambda: tm.current() is None)

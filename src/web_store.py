@@ -45,7 +45,7 @@ def default_data_dir() -> Path:
 def _default_state() -> Dict[str, Any]:
     return {
         "account": None,  # {cookies, uid, nickname, avatar, vip_type}
-        # 借用账号：仅用于下载（取下载链接/详情/歌词）。结构同 account；必须是黑胶 VIP。权限同 account（库文件 600）
+        # 借用账号：仅用于下载（取下载链接/详情/歌词）。结构同 account；必须是VIP。权限同 account（库文件 600）
         "download_account": None,
         # 所有设置项为 None 表示"用内置默认值"，页面保存后即以页面为准
         "settings": {

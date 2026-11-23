@@ -9,6 +9,7 @@
 
 import logging
 import os
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -137,7 +138,7 @@ def _v3(conn: sqlite3.Connection) -> None:
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             item_id    INTEGER NOT NULL REFERENCES recommendation_items(id) ON DELETE CASCADE,
             attempt    INTEGER NOT NULL,
-            netease_id INTEGER,
+            platform_id INTEGER,
             ok         INTEGER NOT NULL,
             error_kind TEXT NOT NULL DEFAULT '',
             error      TEXT NOT NULL DEFAULT '',
@@ -273,7 +274,32 @@ def _v8(conn: sqlite3.Connection) -> None:
         conn.execute(ddl)
 
 
-MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8]
+def _v9(conn: sqlite3.Connection) -> None:
+    """v9：批次日期改为 LB 标题里的日期（原先截 UTC 创建时间，北京时间 00:01 生成的"当日"歌单会差一天）。
+
+    lb_playlists.rename_to：已建好的 Navidrome 歌单名里的旧日期要改正；这里只登记，下次同步时由 lb_playlist.apply_renames 去改。
+    """
+    conn.execute("ALTER TABLE lb_playlists ADD COLUMN rename_to TEXT")
+    for b in conn.execute("SELECT id, lb_title, lb_date FROM recommendation_batches").fetchall():
+        found = re.findall(r"\d{4}-\d{2}-\d{2}", b["lb_title"] or "")
+        if not found:
+            continue
+        old, new = (b["lb_date"] or "")[:10], found[-1]
+        conn.execute("UPDATE recommendation_batches SET lb_date=? WHERE id=?", (new, b["id"]))
+        if old and old != new:
+            for p in conn.execute("SELECT id, name FROM lb_playlists WHERE batch_id=? AND deleted_at IS NULL", (b["id"],)).fetchall():
+                if old in p["name"]:
+                    conn.execute("UPDATE lb_playlists SET rename_to=? WHERE id=?", (p["name"].replace(old, new), p["id"]))
+
+
+def _v10(conn: sqlite3.Connection) -> None:
+    """v10：download_records 的"音乐平台歌曲 id"列统一叫 platform_id（旧库里是更早的叫法，按位置取第 4 列改名）。"""
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(download_records)").fetchall()]
+    if cols and "platform_id" not in cols:
+        conn.execute(f'ALTER TABLE download_records RENAME COLUMN "{cols[3]}" TO platform_id')
+
+
+MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8, _v9, _v10]
 
 
 class DatabaseVersionError(RuntimeError):

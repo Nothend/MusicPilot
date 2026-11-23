@@ -191,11 +191,11 @@ def test_manual_sync_and_non_network_errors_never_auto_retry(env):
 
 def test_adapter_not_ready_fails_the_task_with_a_readable_reason(env):
     def bad(s, delay):
-        raise NotReady("推荐联动只下载无损，需要黑胶 VIP")
+        raise NotReady("推荐联动只下载无损，需要VIP")
     env.svc.adapter_factory = bad
     env.svc.start("sync"); env.wait()
     r = env.last()
-    assert r["status"] == "failed" and "黑胶 VIP" in r["summary"] and "黑胶 VIP" in env.notes[0][1]
+    assert r["status"] == "failed" and "VIP" in r["summary"] and "VIP" in env.notes[0][1]
 
 
 def test_paused_run_is_notified(env):
@@ -281,7 +281,7 @@ def test_cleanup_preview_falls_back_when_navidrome_is_unreachable(env):
     assert env.svc.cleanup_preview()["stale_stars"] is True
 
 
-# ---------------------------------------------------------------- 网易云账号选择（与现有下载任务一致）
+# ---------------------------------------------------------------- 音乐平台账号选择（与现有下载任务一致）
 class FakeWN:
     registry = {}
 
@@ -299,10 +299,10 @@ class FakeDownloader:
 
 
 @pytest.fixture
-def netease(monkeypatch):
-    import downloader, web_netease
+def platform(monkeypatch):
+    import downloader, web_platform
     FakeWN.registry = {}
-    monkeypatch.setattr(web_netease, "WebNetease", FakeWN)
+    monkeypatch.setattr(web_platform, "WebPlatform", FakeWN)
     monkeypatch.setattr(downloader, "SongDownloader", FakeDownloader)
     return FakeWN.registry
 
@@ -321,20 +321,20 @@ def acct(token):
     return {"cookies": {"MUSIC_U": token}, "nickname": token}
 
 
-def test_vip_login_account_is_used_directly(netease):
-    netease["me"] = {"is_vip": True}
+def test_vip_login_account_is_used_directly(platform):
+    platform["me"] = {"is_vip": True}
     a = default_adapter_factory(Store(state(acct("me"))), {}, 1.5)
     assert a.cookies == {"MUSIC_U": "me"} and a.quality == "lossless" and a.allow_mp3 is False and a.request_delay == 1.5
 
 
-def test_vip_login_ignores_borrowed_account_entirely(netease):
-    netease["me"] = {"is_vip": True}                       # 借用账号根本不在注册表里：若被校验就会失败
+def test_vip_login_ignores_borrowed_account_entirely(platform):
+    platform["me"] = {"is_vip": True}                       # 借用账号根本不在注册表里：若被校验就会失败
     a = default_adapter_factory(Store(state(acct("me"), acct("friend"), "borrowed")), {}, 0)
     assert a.cookies == {"MUSIC_U": "me"}
 
 
-def test_non_vip_uses_borrowed_vip_account(netease):
-    netease["me"] = {"is_vip": False}; netease["friend"] = {"is_vip": True}
+def test_non_vip_uses_borrowed_vip_account(platform):
+    platform["me"] = {"is_vip": False}; platform["friend"] = {"is_vip": True}
     a = default_adapter_factory(Store(state(acct("me"), acct("friend"), "borrowed")), {}, 0)
     assert a.cookies == {"MUSIC_U": "friend"} and a.downloader.api == "api-for-friend" and a.quality == "lossless"
 
@@ -342,18 +342,18 @@ def test_non_vip_uses_borrowed_vip_account(netease):
 @pytest.mark.parametrize("st,reg,msg", [
     (state(None), {}, "扫码登录"),
     (state(acct("me")), {"me": None}, "登录已失效"),
-    (state(acct("me")), {"me": {"is_vip": False}}, "黑胶 VIP"),                                         # 非 VIP 且没选借用
-    (state(acct("me"), None, "borrowed"), {"me": {"is_vip": False}}, "黑胶 VIP"),                        # 选了借用但不存在
+    (state(acct("me")), {"me": {"is_vip": False}}, "VIP"),                                         # 非 VIP 且没选借用
+    (state(acct("me"), None, "borrowed"), {"me": {"is_vip": False}}, "VIP"),                        # 选了借用但不存在
     (state(acct("me"), acct("friend"), "borrowed"), {"me": {"is_vip": False}, "friend": None}, "借用账号登录已失效"),
-    (state(acct("me"), acct("friend"), "borrowed"), {"me": {"is_vip": False}, "friend": {"is_vip": False}}, "已不是黑胶 VIP"),
+    (state(acct("me"), acct("friend"), "borrowed"), {"me": {"is_vip": False}, "friend": {"is_vip": False}}, "已不是VIP"),
 ])
-def test_account_problems_give_clear_errors_and_never_fall_back_to_non_vip(netease, st, reg, msg):
-    netease.update(reg)
+def test_account_problems_give_clear_errors_and_never_fall_back_to_non_vip(platform, st, reg, msg):
+    platform.update(reg)
     with pytest.raises(NotReady, match=msg):
         default_adapter_factory(Store(st), {}, 0)
 
 
-def test_configured_quality_is_respected_for_vip(netease):
-    netease["me"] = {"is_vip": True}
+def test_configured_quality_is_respected_for_vip(platform):
+    platform["me"] = {"is_vip": True}
     a = default_adapter_factory(Store(state(acct("me"), quality="hires")), {}, 0)
     assert a.quality == "hires"

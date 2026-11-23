@@ -248,7 +248,7 @@ def _one_char_variant(a: str, b: str) -> bool:
 
 def _title_level(t: Target, f: LocalFile, lenient: bool = True) -> Optional[str]:
     """lenient=True（查本地库）：Radio Edit/单曲版/专辑版/Explicit 等软版本词不算不同录音。
-    lenient=False（挑网易云搜索结果）：软版本词也必须一致，免得用电台剪辑版顶替原版。"""
+    lenient=False（挑音乐平台搜索结果）：软版本词也必须一致，免得用电台剪辑版顶替原版。"""
     if t.artist.strip() == f.artist.strip() and t.title.strip() == f.title.strip():
         return "exact"
     a, b = title_key(t.title), title_key(f.title)

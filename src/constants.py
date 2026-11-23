@@ -1,4 +1,4 @@
-"""网易云 API 相关常量（URL、请求头、默认设备参数、eapi AES 密钥）。"""
+"""音乐平台 API 相关常量（URL、请求头、默认设备参数、eapi AES 密钥）。"""
 
 
 class APIConstants:

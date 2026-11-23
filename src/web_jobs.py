@@ -1,7 +1,7 @@
 """Web 控制台的下载任务引擎：筛选 → 下载 → 进度，单线程任务队列。
 
 只复用现有的 SongDownloader / library / BarkNotifier，不改变其行为。
-同一时刻只执行一个任务（其余排队），避免对网易云造成突发请求而触发风控。
+同一时刻只执行一个任务（其余排队），避免对音乐平台造成突发请求而触发风控。
 """
 
 import contextlib
@@ -21,7 +21,7 @@ from utils import quality_display_name
 from web_common import (build_library_checker, download_account_of, effective_bark_api, effective_quality,
                         effective_request_delay, fetch_tracks, normalize_source,
                         resolve_subdir, source_label)
-from web_netease import WebNetease
+from web_platform import WebPlatform
 from web_store import WebStore
 
 logger = logging.getLogger(__name__)
@@ -252,7 +252,7 @@ class JobManager:
             if job is None:
                 continue
             try:
-                with (self.task_lock.hold("网易云下载任务") if self.task_lock else contextlib.nullcontext()):
+                with (self.task_lock.hold("音乐平台下载任务") if self.task_lock else contextlib.nullcontext()):
                     if job.cancel.is_set():
                         self._finish(job, "cancelled", "已取消")
                     else:
@@ -299,7 +299,7 @@ class JobManager:
         if not account or not account.get("cookies"):
             return self._finish(job, "failed", "尚未登录，请先扫码登录")
 
-        wn = WebNetease(account["cookies"])
+        wn = WebPlatform(account["cookies"])
         info = wn.account_info()
         if info is None:
             def mark(s):
@@ -332,9 +332,9 @@ class JobManager:
                 self._notify("云音乐 Web 任务失败", msg)
                 return self._finish(job, "failed", msg)
             try:
-                binfo = WebNetease(borrowed["cookies"]).account_info()
+                binfo = WebPlatform(borrowed["cookies"]).account_info()
             except Exception as e:
-                msg = f"借用账号校验时连接网易云失败：{e}"
+                msg = f"借用账号校验时连接音乐平台失败：{e}"
                 self._notify("云音乐 Web 任务失败", msg)
                 return self._finish(job, "failed", msg)
             if binfo is None:
@@ -346,7 +346,7 @@ class JobManager:
                 self._notify("云音乐 Web 任务失败", msg)
                 return self._finish(job, "failed", msg)
             if not binfo["is_vip"]:
-                msg = f"借用账号「{binfo['nickname']}」已不是黑胶 VIP，无法下载，请更换借用账号"
+                msg = f"借用账号「{binfo['nickname']}」已不是VIP，无法下载，请更换借用账号"
                 self._notify("云音乐 Web 任务失败", msg)
                 return self._finish(job, "failed", msg)
 
@@ -356,16 +356,16 @@ class JobManager:
                     s["download_account"]["invalid"] = False
             self.store.update(refresh_borrowed)
             dl_cookies = borrowed["cookies"]
-            dl_api = WebNetease(dl_cookies).api
+            dl_api = WebPlatform(dl_cookies).api
             is_vip = True
-            who = f"借用账号 {binfo['nickname']}（黑胶 VIP）"
+            who = f"借用账号 {binfo['nickname']}（VIP）"
             job.log(f"列表账号：{info['nickname']}；下载账号：{who}")
         else:
-            who = f"账号 {info['nickname']}（{'黑胶 VIP' if is_vip else '非 VIP，仅可下载 MP3'}）"
+            who = f"账号 {info['nickname']}（{'VIP' if is_vip else '非 VIP，仅可下载 MP3'}）"
             if pick["kind"] == "borrowed":
-                # 登录账号本身就是黑胶 VIP，不需要借用账号：直接用它，也就不校验、不动借用账号
+                # 登录账号本身就是VIP，不需要借用账号：直接用它，也就不校验、不动借用账号
                 # （借用账号的 cookie 不被使用，也少一份被风控的风险）
-                job.log("登录账号已是黑胶 VIP，无需借用账号，直接用登录账号下载")
+                job.log("登录账号已是VIP，无需借用账号，直接用登录账号下载")
 
         quality = effective_quality(settings, is_vip)
         job.log(f"{who}，音质：{quality_display_name(quality)}")

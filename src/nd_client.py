@@ -129,5 +129,8 @@ class NavidromeClient:
         r = self._call("createPlaylist", name=name, songId=song_ids or None)
         return r.get("playlist", {}).get("id", "")
 
+    def rename_playlist(self, playlist_id: str, name: str) -> None:
+        self._call("updatePlaylist", playlistId=playlist_id, name=name)
+
     def delete_playlist(self, playlist_id: str) -> None:
         self._call("deletePlaylist", id=playlist_id)

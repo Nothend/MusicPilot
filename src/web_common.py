@@ -1,6 +1,6 @@
 """Web 控制台的公共辅助：下载目录安全、下载来源解析、设置解析。
 
-只复用现有的 NeteaseMusic，不改变其行为。
+只复用现有的 PlatformMusic，不改变其行为。
 """
 
 import logging
@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from http_client import SESSION
 from library import MusicTagWebChecker, NavidromeChecker, make_library_checker
 from models import QualityLevel
-from web_netease import WebNetease
+from web_platform import WebPlatform
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def list_subdirs(base: Path) -> List[str]:
 _ID_RE = re.compile(r"(?:[?&]id=|/(?:playlist|album)/)(\d+)")
 
 
-def parse_netease_id(text: Any) -> Optional[int]:
+def parse_platform_id(text: Any) -> Optional[int]:
     """从纯数字 / 分享链接（含 #/playlist?id=xxx、/album?id=xxx）里提取 ID。"""
     s = str(text or "").strip()
     if s.isdigit():
@@ -110,7 +110,7 @@ def normalize_source(source: Dict[str, Any]) -> Dict[str, Any]:
     stype = source["type"]
     out = {"type": stype, "id": None, "name": str(source.get("name") or "").strip()[:60]}
     if stype in ("playlist", "album"):
-        sid = parse_netease_id(source.get("id"))
+        sid = parse_platform_id(source.get("id"))
         if not sid:
             raise ValueError("请填写有效的歌单/专辑 ID 或链接")
         out["id"] = sid
@@ -128,7 +128,7 @@ def source_label(source: Dict[str, Any]) -> str:
     }[source["type"]]
 
 
-def fetch_tracks(wn: WebNetease, source: Dict[str, Any], uid: Optional[int]) -> Dict[str, Any]:
+def fetch_tracks(wn: WebPlatform, source: Dict[str, Any], uid: Optional[int]) -> Dict[str, Any]:
     """按来源取歌曲列表，返回 {'name': 来源名称, 'tracks': [...], 'missing': bool}。"""
     stype = source["type"]
     if stype == "daily":

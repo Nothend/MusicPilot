@@ -23,6 +23,21 @@ def playlist_name(rec_type: str, lb_date: str, names: Optional[Dict[str, str]] =
     return tpl.replace("{date}", (lb_date or "")[:10]).strip()
 
 
+def apply_renames(db, nd, log: Callable[..., None]) -> int:
+    """把 v9 迁移登记的"待改名"歌单在 Navidrome 里改名（失败只记日志，下次同步再试）。"""
+    n = 0
+    for row in lb_repo.pending_renames(db):
+        try:
+            nd.rename_playlist(row["nd_playlist_id"], row["rename_to"])
+        except NavidromeError as e:
+            log(f"歌单改名失败：{row['name']} → {row['rename_to']} — {e}", "WARNING")
+            continue
+        lb_repo.finish_rename(db, row["id"], row["rename_to"])
+        log(f"歌单已改名：{row['name']} → {row['rename_to']}")
+        n += 1
+    return n
+
+
 def publish_batch(db, nd, batch_id: int, log: Callable[..., None], now: Optional[datetime] = None,
                   names: Optional[Dict[str, str]] = None) -> Optional[str]:
     """返回新歌单的 Navidrome id；没有可放的歌或失败返回 None（失败只记日志，不影响任务）。"""

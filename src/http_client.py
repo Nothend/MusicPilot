@@ -8,7 +8,7 @@ from urllib3.util.retry import Retry
 
 from constants import APIConstants
 
-# 全局共享 Session：网易云的反作弊会通过 Set-Cookie 下发设备 cookie（如 NMTID），
+# 全局共享 Session：音乐平台的反作弊会通过 Set-Cookie 下发设备 cookie（如 NMTID），
 # song/url 接口要求请求带上这些 cookie，否则返回 -462「网络环境存在风险」。
 # 用同一个 Session 让前序请求（账号校验、取歌单等）拿到的 cookie 自动延续到后续请求。
 SESSION = requests.Session()
@@ -34,10 +34,10 @@ class APIException(Exception):
     pass
 
 
-def netease_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
-    """网易云各接口通用请求头（UA/Referer）；extra 可追加/覆盖额外字段。
+def platform_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """音乐平台各接口通用请求头（UA/Referer）；extra 可追加/覆盖额外字段。
 
-    统一在此定义，供 http_client 自身与 netease 各接口复用，避免多处重复维护同一份头。
+    统一在此定义，供 http_client 自身与 music_api 各接口复用，避免多处重复维护同一份头。
     """
     headers = {
         'User-Agent': APIConstants.USER_AGENT,
@@ -59,7 +59,7 @@ class HTTPClient:
     @staticmethod
     def post_request_full(url: str, params: str, cookies: Dict[str, str]) -> requests.Response:
         """发送POST请求并返回完整响应对象"""
-        headers = netease_headers()
+        headers = platform_headers()
 
         request_cookies = APIConstants.DEFAULT_COOKIES.copy()
         request_cookies.update(cookies)

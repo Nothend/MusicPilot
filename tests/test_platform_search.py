@@ -4,7 +4,7 @@ import requests
 from fakes import FakeResp, FakeSession
 from http_client import APIException
 from matcher import Target
-from netease_search import Candidate, SearchRateLimited, rank_candidates, search_songs
+from platform_search import Candidate, SearchRateLimited, rank_candidates, search_songs
 
 
 def song(i, name, artists, album, dt, fee=1, alia=None):

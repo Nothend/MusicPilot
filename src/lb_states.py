@@ -5,7 +5,7 @@
   DOWNLOADING      正在下载（仅进程内的中间态；重启后复位为 PENDING）
   LOCAL_MAIN       主库里已有，直接复用
   LOCAL_DISCOVERY  试听库里已有（含刚下载的）
-  NOT_FOUND        网易云没有可用的无损版本（reason_kind: not_found / only_mp3 / no_copyright / cooldown）
+  NOT_FOUND        音乐平台没有可用的无损版本（reason_kind: not_found / only_mp3 / no_copyright / cooldown）
   DOWNLOAD_FAILED  下载环节出错，可按重试规则再试
   MULTIPLE_MATCH   本地有多个无法区分的候选，等人工选择
   SKIPPED          按规则跳过（如超出最大新下载数）

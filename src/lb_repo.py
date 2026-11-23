@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import lb_states as ST
 from db import Database
+from lb_client import batch_date
 from matcher import Target
 
 # set_state 允许一并更新的字段（白名单，防止拼写错误悄悄写进不存在的列）
@@ -59,7 +60,8 @@ def create_batch(db: Database, rec_type: str, header: Dict[str, Any], playlist: 
         cur = conn.execute(
             "INSERT INTO recommendation_batches(type, lb_playlist_mbid, lb_title, lb_date, fetched_at, status, total) "
             "VALUES(?,?,?,?,?, 'active', ?)",
-            (rec_type, header["mbid"], header.get("title", ""), header.get("date", ""), ts, len(playlist["tracks"])))
+            (rec_type, header["mbid"], header.get("title", ""),
+             batch_date(header.get("title", ""), header.get("date", "")), ts, len(playlist["tracks"])))
         batch_id = cur.lastrowid
         for pos, tr in enumerate(playlist["tracks"], start=1):
             tid = _upsert_track(conn, tr, ts)
@@ -134,14 +136,14 @@ def save_candidates(db: Database, item_id: int, files: Iterable[Any]) -> None:
                          [(item_id, f.nd_song_id, f.library) for f in files])
 
 
-def record_download(db: Database, item_id: int, attempt: int, *, ok: bool, netease_id: Optional[int] = None,
+def record_download(db: Database, item_id: int, attempt: int, *, ok: bool, platform_id: Optional[int] = None,
                     error_kind: str = "", error: str = "", path: str = "", quality: str = "",
                     file_type: str = "", now: Optional[datetime] = None) -> None:
     with db.transaction() as conn:
         conn.execute(
-            "INSERT INTO download_records(item_id, attempt, netease_id, ok, error_kind, error, path, quality, file_type, at) "
+            "INSERT INTO download_records(item_id, attempt, platform_id, ok, error_kind, error, path, quality, file_type, at) "
             "VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (item_id, attempt, netease_id, 1 if ok else 0, error_kind, error, path, quality, file_type, now_iso(now)))
+            (item_id, attempt, platform_id, 1 if ok else 0, error_kind, error, path, quality, file_type, now_iso(now)))
 
 
 def download_attempts(db: Database, item_id: int) -> int:
@@ -190,6 +192,16 @@ def record_playlist(db: Database, batch_id: int, name: str, nd_playlist_id: str,
     with db.transaction() as conn:
         conn.execute("INSERT INTO lb_playlists(batch_id, name, nd_playlist_id, song_count, created_at) VALUES(?,?,?,?,?)",
                      (batch_id, name, nd_playlist_id, song_count, now_iso(now)))
+
+
+def pending_renames(db: Database) -> List[sqlite3.Row]:
+    with db.lock:
+        return db.conn.execute("SELECT * FROM lb_playlists WHERE rename_to IS NOT NULL AND deleted_at IS NULL").fetchall()
+
+
+def finish_rename(db: Database, row_id: int, new_name: str) -> None:
+    with db.transaction() as conn:
+        conn.execute("UPDATE lb_playlists SET name=?, rename_to=NULL WHERE id=?", (new_name, row_id))
 
 
 def live_playlists_of_batch(db: Database, batch_id: int) -> List[sqlite3.Row]:

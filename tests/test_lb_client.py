@@ -122,3 +122,12 @@ def test_love_posts_score_one():
     c, sess, _ = client([FakeResp(200, {"status": "ok"})])
     c.love("rid")
     assert sess.calls[0]["method"] == "POST" and sess.calls[0]["json"] == {"recording_mbid": "rid", "score": 1}
+
+
+def test_batch_date_follows_title_not_utc_creation_time():
+    # 真实案例：LB 页面标题 2026-11-23，创建于 UTC 11-22 16:01（北京时间 11-23 00:01）
+    from lb_client import batch_date
+    assert batch_date("Daily Jams for u, 2026-11-23 Mon", "2026-11-22T16:01:10.101451+00:00") == "2026-11-23"
+    assert batch_date("Weekly Jams for u, week of 2026-09-14 Mon", "2026-09-14T00:12:01+00:00") == "2026-09-14"
+    assert batch_date("无日期标题", "2026-09-14T00:12:01+00:00") in ("2026-09-14", "2026-09-13", "2026-09-15")
+    assert batch_date("", "") == ""

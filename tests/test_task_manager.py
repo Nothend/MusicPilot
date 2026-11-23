@@ -159,14 +159,14 @@ def test_hold_blocks_until_free_and_shows_label(tm):
     got = threading.Event()
     seen = {}
     def waiter():
-        with tm.hold("网易云下载任务"):
+        with tm.hold("音乐平台下载任务"):
             seen["current"] = tm.current()["type"]
             got.set()
     t = threading.Thread(target=waiter)
     t.start()
     assert not got.wait(0.3)                                    # 推荐任务在跑：下载队列在等，不会插队
     tm.end(h)
-    assert got.wait(5) and seen["current"] == "网易云下载任务"
+    assert got.wait(5) and seen["current"] == "音乐平台下载任务"
     t.join()
     assert tm.current() is None
 
@@ -174,13 +174,13 @@ def test_hold_blocks_until_free_and_shows_label(tm):
 def test_recommend_task_is_rejected_while_download_queue_holds_the_lock(tm):
     entered, leave = threading.Event(), threading.Event()
     def holder():
-        with tm.hold("网易云下载任务"):
+        with tm.hold("音乐平台下载任务"):
             entered.set()
             leave.wait(5)
     t = threading.Thread(target=holder)
     t.start()
     assert entered.wait(5)
-    with pytest.raises(TaskBusy, match="网易云下载任务"):
+    with pytest.raises(TaskBusy, match="音乐平台下载任务"):
         tm.begin("sync", "manual")
     leave.set(); t.join()
     tm.end(tm.begin("sync", "manual"))

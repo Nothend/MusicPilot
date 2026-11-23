@@ -1,7 +1,7 @@
 """任务管理：全局互斥 + 运行记录 + 日志。
 
 所有会改库的推荐联动任务（同步、转正、清理、索引、红心同步）和现有的下载任务都应共用一把锁，
-避免并发调用网易云下载器、或同步时被清理误删刚下载的歌。
+避免并发调用音乐平台下载器、或同步时被清理误删刚下载的歌。
 - 已有任务在跑时再触发：抛 TaskBusy（页面提示「任务正在运行」），不排队、不创建第二个；
 - 每次运行在 task_runs 留一行（开始/结束/状态/统计），日志同时写 task_logs 与文件 <log_dir>/lb-YYYYMMDD.log；
 - 启动时把上次遗留的 running 标为 interrupted。
@@ -130,7 +130,7 @@ class TaskManager:
 
     @contextmanager
     def hold(self, label: str) -> Iterator[None]:
-        """阻塞等待并持有全局锁（给「现有网易云下载队列」用：它自带排队，轮到它时等推荐任务跑完再开始）。
+        """阻塞等待并持有全局锁（给「现有音乐平台下载队列」用：它自带排队，轮到它时等推荐任务跑完再开始）。
         不产生 task_runs 记录；持有期间 current() 会显示 label，页面据此提示「有任务在运行」。"""
         self._lock.acquire()
         self._current = {"id": 0, "type": label, "trigger": "queue", "started_at": datetime.now().isoformat(timespec="seconds")}

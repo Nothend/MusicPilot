@@ -79,6 +79,9 @@ class FakeND:
         self.playlists[pid] = (name, list(ids))
         return pid
 
+    def rename_playlist(self, pid, name):
+        self.renamed = getattr(self, "renamed", []) + [(pid, name)]
+
     def delete_playlist(self, pid):
         self.deleted.append(pid)
         self.playlists.pop(pid, None)
@@ -102,7 +105,7 @@ class FakeAdapter:
             p = make_flac(Path(output_dir) / f"{artist} - {title}.flac", artist, title)
             sid = f"nd-{title}"
             self.nd.disk_disc.append(ndsong(sid, artist, title, 200))
-            return AdapterResult(True, str(p), netease_id=1, quality="lossless", file_type="flac")
+            return AdapterResult(True, str(p), platform_id=1, quality="lossless", file_type="flac")
         if isinstance(r, str):                  # 错误类型简写
             return AdapterResult(False, error=f"fake {r}", error_kind=r)
         return r
@@ -508,3 +511,14 @@ def test_custom_playlist_name_is_used_and_old_playlist_is_replaced(env):
     lb_playlist.publish_batch(env.db, env.nd, 1, lambda *a, **k: None, env.now, env.settings["playlist_names"])
     names = [n for n, _ in env.nd.playlists.values()]
     assert names == ["每周熟悉 2026-11-20"] and old_id not in env.nd.playlists
+
+
+def test_sync_applies_pending_playlist_renames_before_anything_else(env):
+    with env.db.transaction() as c:
+        c.execute("INSERT INTO recommendation_batches(id,type,lb_playlist_mbid,lb_title,lb_date,fetched_at,status,total) "
+                  "VALUES(99,'daily','old','t','2026-11-23','t','done',0)")
+        c.execute("INSERT INTO lb_playlists(batch_id,name,nd_playlist_id,song_count,created_at,rename_to) "
+                  "VALUES(99,'LB Daily Jams 2026-11-22','pX',1,'t','LB Daily Jams 2026-11-23')")
+    env.sync()
+    assert env.nd.renamed == [("pX", "LB Daily Jams 2026-11-23")]
+    assert lb_repo.pending_renames(env.db) == []

@@ -4,7 +4,7 @@ import pytest
 from mutagen.flac import FLAC
 
 from audio import make_flac
-from lb_adapter import NeteaseAdapter, validate_audio
+from lb_adapter import PlatformAdapter, validate_audio
 from lb_enrich import DownloadChannel, EnrichResult, Enricher, TagContext, run_enrichers
 from test_lb_adapter import FakeDownloader, GOOD, adapter, info, run
 
@@ -135,7 +135,7 @@ def test_enricher_runs_on_staged_file_before_it_reaches_output(tmp_path):
     r = run(adapter(tmp_path, FakeDownloader([info()]), [GOOD], enrichers=[Spy()]), out)
     assert r.success
     assert seen["path"].parent == out / ".staging" and seen["final_exists"] is False     # 此时还没进入试听库
-    assert (seen["ctx"].source, seen["ctx"].artist, seen["ctx"].album, seen["ctx"].duration_s) == ("netease", "郭靜", "在樹上唱歌", 227.0)
+    assert (seen["ctx"].source, seen["ctx"].artist, seen["ctx"].album, seen["ctx"].duration_s) == ("platform", "郭靜", "在樹上唱歌", 227.0)
 
 
 def test_enriched_tags_end_up_in_the_final_file(tmp_path):
@@ -164,7 +164,7 @@ def test_validation_still_catches_an_enricher_that_breaks_the_file(tmp_path):
 
 
 # ---------------------------------------------------------------- 渠道接口
-def test_netease_adapter_satisfies_download_channel_protocol(tmp_path):
+def test_platform_adapter_satisfies_download_channel_protocol(tmp_path):
     assert isinstance(adapter(tmp_path, FakeDownloader(), []), DownloadChannel)
 
 

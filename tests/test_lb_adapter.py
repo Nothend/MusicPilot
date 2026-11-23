@@ -5,9 +5,9 @@ import pytest
 import lb_adapter
 from audio import make_flac
 from downloader import DownloadException
-from lb_adapter import NeteaseAdapter, validate_audio
+from lb_adapter import PlatformAdapter, validate_audio
 from models import DownloadResult, MusicInfo
-from netease_search import Candidate, SearchRateLimited
+from platform_search import Candidate, SearchRateLimited
 from http_client import APIException
 
 
@@ -62,7 +62,7 @@ def adapter(tmp_path, downloader, searches, **kw):
         if isinstance(r, Exception):
             raise r
         return r
-    a = NeteaseAdapter({"MUSIC_U": "x"}, downloader, "lossless", search=search, sleep=lambda s: None, **kw)
+    a = PlatformAdapter({"MUSIC_U": "x"}, downloader, "lossless", search=search, sleep=lambda s: None, **kw)
     a.calls = calls
     return a
 
@@ -91,7 +91,7 @@ def test_success_moves_file_into_output_and_cleans_staging(tmp_path):
     out = tmp_path / "discovery"
     dl = FakeDownloader([info()])
     r = run(adapter(tmp_path, dl, [GOOD]), out)
-    assert r.success and r.netease_id == 1 and r.file_type == "flac" and r.quality == "lossless" and not r.reused
+    assert r.success and r.platform_id == 1 and r.file_type == "flac" and r.quality == "lossless" and not r.reused
     assert Path(r.path) == out / "郭静 - 心墙.flac" and Path(r.path).is_file()
     assert validate_audio(Path(r.path)) is None
     assert list((out / ".staging").iterdir()) == []                      # 暂存区已清空
@@ -142,7 +142,7 @@ def test_falls_through_unavailable_candidate_to_next(tmp_path):
     dl = FakeDownloader([DownloadException("无版权", kind="no_copyright"), info(2)])
     two = cands((1, "心墙", ["郭静"], "A", 227), (2, "心墙", ["郭静"], "B", 226))
     r = run(adapter(tmp_path, dl, [two]), tmp_path / "d")
-    assert r.success and r.netease_id == 2 and r.tried == 2
+    assert r.success and r.platform_id == 2 and r.tried == 2
 
 
 def test_all_unavailable_is_no_copyright(tmp_path):
@@ -155,7 +155,7 @@ def test_api_error_while_getting_link_stops_immediately(tmp_path):
     dl = FakeDownloader([DownloadException("接口错误", kind="api"), info(2)])
     two = cands((1, "心墙", ["郭静"], "A", 227), (2, "心墙", ["郭静"], "B", 226))
     r = run(adapter(tmp_path, dl, [two]), tmp_path / "d")
-    assert (r.error_kind, r.netease_id, r.tried) == ("api", 1, 1)      # 暂时性错误不换候选，留给重试
+    assert (r.error_kind, r.platform_id, r.tried) == ("api", 1, 1)      # 暂时性错误不换候选，留给重试
 
 
 def test_only_tries_max_candidates(tmp_path):

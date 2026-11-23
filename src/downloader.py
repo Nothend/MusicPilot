@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import requests
 
-from netease import NeteaseMusic, APIException
+from music_api import PlatformMusic, APIException
 from http_client import SESSION
 from utils import timestamp_to_date
 from models import AudioFormat, MusicInfo, DownloadResult
@@ -26,15 +26,15 @@ class DownloadException(Exception):
         self.kind = kind
 
 class SongDownloader:
-    def __init__(self, cookies: Dict[str, str], netease_api: "NeteaseMusic" = None):
+    def __init__(self, cookies: Dict[str, str], platform_api: "PlatformMusic" = None):
         self.logger = logging.getLogger(__name__)
         self.download_dir = self._get_download_dir()
         self._init_download_dir()
         self.parsedCookies=cookies
         # 最近一次 get_music_info 返回 None（跳过）的原因，供 Web 任务记录展示
         self.last_skip_reason = ""
-        # 复用外部传入的 NeteaseMusic 实例；未传入时再自行创建
-        self.NeteaseApi = netease_api or NeteaseMusic(self.parsedCookies)
+        # 复用外部传入的 PlatformMusic 实例；未传入时再自行创建
+        self.PlatformApi = platform_api or PlatformMusic(self.parsedCookies)
         
         # 支持的文件格式
         self.supported_formats = {
@@ -154,7 +154,7 @@ class SongDownloader:
         try:
 
             # 获取音乐URL信息
-            url_result = self.NeteaseApi.get_song_url(music_id, quality, self.parsedCookies)
+            url_result = self.PlatformApi.get_song_url(music_id, quality, self.parsedCookies)
             if not url_result.get('data') or not url_result['data']:
                 raise DownloadException(f"无法获取音乐ID {music_id} 的播放链接", kind="api")
 
@@ -184,7 +184,7 @@ class SongDownloader:
                 return None
 
             # 获取音乐详情
-            detail_result = self.NeteaseApi.get_song_detail(music_id, self.parsedCookies)
+            detail_result = self.PlatformApi.get_song_detail(music_id, self.parsedCookies)
             if not detail_result.get('songs') or not detail_result['songs']:
                 raise DownloadException(f"无法获取音乐ID {music_id} 的详细信息", kind="api")
 
@@ -196,13 +196,13 @@ class SongDownloader:
             publish_ts = song_detail.get('publishTime') or album.get('publishTime') or 0
             if not publish_ts and album.get('id'):
                 try:
-                    album_info = self.NeteaseApi.get_album_detail(album['id'], self.parsedCookies)
+                    album_info = self.PlatformApi.get_album_detail(album['id'], self.parsedCookies)
                     publish_ts = album_info.get('publishTime') or 0
                 except APIException as e:
                     self.logger.debug(f"专辑详情获取失败，跳过发行时间回退：{e}")
 
             # 获取歌词
-            lyric_result = self.NeteaseApi.get_lyric(music_id, self.parsedCookies)
+            lyric_result = self.PlatformApi.get_lyric(music_id, self.parsedCookies)
             lyric = lyric_result.get('lrc', {}).get('lyric', '') if lyric_result else ''
             tlyric = lyric_result.get('tlyric', {}).get('lyric', '') if lyric_result else ''
             

@@ -1,8 +1,8 @@
-"""网易云下载适配器：对推荐联动暴露 `download_song(artist, title, output_dir)`。
+"""音乐平台下载适配器：对推荐联动暴露 `download_song(artist, title, output_dir)`。
 
 内部流程：搜索 → 按「歌手/歌名/版本/时长」选歌（复用 matcher）→ 现有 SongDownloader 取链接、下载、写标签
 → 校验（文件存在、大小>0、mutagen 可读、含 Artist+Title）→ 原子改名到 output_dir。
-网易云下载的核心逻辑（取链接/写标签/原子下载）仍由现有 SongDownloader 负责，这里不改动它。
+音乐平台下载的核心逻辑（取链接/写标签/原子下载）仍由现有 SongDownloader 负责，这里不改动它。
 
 失败分类 error_kind：
   not_found     搜不到歌手+歌名都吻合的候选             → NOT_FOUND
@@ -26,7 +26,7 @@ from http_client import APIException
 from lb_enrich import Enricher, TagContext, run_enrichers
 from lb_settings import STAGING_DIRNAME
 from matcher import Target
-from netease_search import SearchRateLimited, rank_candidates, search_songs
+from platform_search import SearchRateLimited, rank_candidates, search_songs
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class AdapterResult:
     path: Optional[str] = None
     error: str = ""
     error_kind: str = ""
-    netease_id: Optional[int] = None
+    platform_id: Optional[int] = None
     quality: str = ""
     file_type: str = ""
     reused: bool = False          # 目标文件已存在且校验通过（上次中断前已落盘），直接复用
@@ -77,7 +77,7 @@ def validate_audio(path: Path) -> Optional[str]:
     return None
 
 
-class NeteaseAdapter:
+class PlatformAdapter:
     def __init__(self, cookies: dict, downloader: SongDownloader, quality: str, *,
                  allow_mp3: bool = False, max_candidates: int = 3, request_delay: float = 0.0,
                  search: Callable = search_songs, sleep: Callable[[float], None] = time.sleep,
@@ -91,7 +91,7 @@ class NeteaseAdapter:
         self.request_delay = request_delay
         self._search = search
         self._sleep = sleep
-        # 元数据补全器（默认没有：网易云下载器自己已写好完整标签）。扩展点说明见 lb_enrich.py
+        # 元数据补全器（默认没有：音乐平台下载器自己已写好完整标签）。扩展点说明见 lb_enrich.py
         self.enrichers = list(enrichers)
 
     def download_song(self, artist: str, title: str, output_dir, *, artists: Optional[List[str]] = None,
@@ -108,7 +108,7 @@ class NeteaseAdapter:
         except APIException as e:
             return AdapterResult(False, error=str(e), error_kind="api")
         if not ranked:
-            return AdapterResult(False, error=f"网易云没有「{artist} - {title}」的吻合版本", error_kind="not_found")
+            return AdapterResult(False, error=f"音乐平台没有「{artist} - {title}」的吻合版本", error_kind="not_found")
 
         # 2) 依次尝试候选，取到可下载的无损链接为止
         info, only_mp3, unavailable, tried = None, False, "", 0
@@ -122,7 +122,7 @@ class NeteaseAdapter:
                 if e.kind in _UNAVAILABLE_KINDS:
                     unavailable = str(e)
                     continue
-                return AdapterResult(False, error=str(e), error_kind="api", netease_id=cand.id, tried=tried)
+                return AdapterResult(False, error=str(e), error_kind="api", platform_id=cand.id, tried=tried)
             if info is None:
                 only_mp3 = True
                 continue
@@ -138,7 +138,7 @@ class NeteaseAdapter:
         try:
             staging.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            return AdapterResult(False, error=f"无法创建暂存目录: {e}", error_kind="download", netease_id=info.id, tried=tried)
+            return AdapterResult(False, error=f"无法创建暂存目录: {e}", error_kind="download", platform_id=info.id, tried=tried)
         self.downloader.download_dir = staging
         staged = self.downloader._target_path(info)
         self._unlink(staged)          # 上次中断可能留下没写完标签的同名文件：一律重下
@@ -146,24 +146,24 @@ class NeteaseAdapter:
         if not res.success:
             self._unlink(staged)
             return AdapterResult(False, error=res.error_message or "下载失败", error_kind="download",
-                                 netease_id=info.id, tried=tried)
+                                 platform_id=info.id, tried=tried)
         staged = Path(res.file_path)
 
         # 4) 元数据补全（可选扩展点；必须在文件进入 Navidrome 之前完成，否则标签变化会让歌曲 id/红心失效）
         enriched: List[str] = []
         if self.enrichers:
-            ctx = TagContext(source="netease", artist=artist, title=title, album=album,
+            ctx = TagContext(source="platform", artist=artist, title=title, album=album,
                              artists=tuple(artists or ()), duration_s=target.duration_s)
             enriched, fatal = run_enrichers(staged, ctx, self.enrichers)
             if fatal:
                 self._unlink(staged)
-                return AdapterResult(False, error=fatal, error_kind="invalid", netease_id=info.id, tried=tried)
+                return AdapterResult(False, error=fatal, error_kind="invalid", platform_id=info.id, tried=tried)
 
         # 4b) 校验（补全器弄坏文件也会在这里被拦下）
         why = validate_audio(staged)
         if why:
             self._unlink(staged)
-            return AdapterResult(False, error=f"下载后校验失败：{why}", error_kind="invalid", netease_id=info.id, tried=tried)
+            return AdapterResult(False, error=f"下载后校验失败：{why}", error_kind="invalid", platform_id=info.id, tried=tried)
 
         # 5) 原子落到 output_dir；目标已存在且合格则复用（幂等：上次已落盘但状态没来得及写库）
         final = out_dir / staged.name
@@ -171,16 +171,16 @@ class NeteaseAdapter:
             if final.exists():
                 if validate_audio(final) is None:
                     self._unlink(staged)
-                    return AdapterResult(True, str(final), netease_id=info.id, quality=info.quality,
+                    return AdapterResult(True, str(final), platform_id=info.id, quality=info.quality,
                                          file_type=info.file_type, reused=True, tried=tried, enriched=enriched)
                 self._unlink(staged)
                 return AdapterResult(False, error=f"目标文件已存在但校验失败，未覆盖：{final.name}",
-                                     error_kind="invalid", netease_id=info.id, tried=tried)
+                                     error_kind="invalid", platform_id=info.id, tried=tried)
             safe_move(staged, final)
         except OSError as e:
             self._unlink(staged)
-            return AdapterResult(False, error=f"移入目标目录失败: {e}", error_kind="download", netease_id=info.id, tried=tried)
-        return AdapterResult(True, str(final), netease_id=info.id, quality=info.quality,
+            return AdapterResult(False, error=f"移入目标目录失败: {e}", error_kind="download", platform_id=info.id, tried=tried)
+        return AdapterResult(True, str(final), platform_id=info.id, quality=info.quality,
                              file_type=info.file_type, tried=tried, enriched=enriched)
 
     # ------------------------------------------------------------ 内部
@@ -189,7 +189,7 @@ class NeteaseAdapter:
         ranked = rank_candidates(target, album, self._search(self.cookies, f"{first} {target.title}".strip(), 20))
         if ranked:
             return ranked
-        self._sleep(self.request_delay)   # 兜底：只用歌名搜（歌手名在网易云里写法不同时）
+        self._sleep(self.request_delay)   # 兜底：只用歌名搜（歌手名在音乐平台里写法不同时）
         return rank_candidates(target, album, self._search(self.cookies, target.title, 30))
 
     @staticmethod

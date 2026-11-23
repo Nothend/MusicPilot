@@ -1,4 +1,4 @@
-"""页面冒烟测试的后端：真实后端 + 假的外部系统（Navidrome/ListenBrainz/网易云），造一份有代表性的数据并起 HTTP 服务。
+"""页面冒烟测试的后端：真实后端 + 假的外部系统（Navidrome/ListenBrainz/音乐平台），造一份有代表性的数据并起 HTTP 服务。
 不属于 pytest，手动使用：见同目录 README.md。"""
 import sys, os, json, threading, time
 from pathlib import Path as _P

@@ -1,6 +1,6 @@
-"""Web 控制台专用的网易云接口扩展：扫码登录、账号资料、每日推荐。
+"""Web 控制台专用的音乐平台接口扩展：扫码登录、账号资料、每日推荐。
 
-以子类方式扩展 NeteaseMusic，不改动原有 netease.py。
+以子类方式扩展 PlatformMusic，不改动原有 music_api.py。
 """
 
 import json
@@ -13,7 +13,7 @@ import requests
 
 from constants import APIConstants
 from crypto import CryptoUtils
-from http_client import SESSION, APIException, netease_headers
+from http_client import SESSION, APIException, platform_headers
 
 DAILY_RECOMMEND_API = "https://interface3.music.163.com/eapi/v3/discovery/recommend/songs"
 
@@ -23,13 +23,13 @@ _EXTRA_COOKIES = {"os": "pc", "appver": "8.9.75"}
 # 扫码状态码
 QR_EXPIRED, QR_WAITING, QR_SCANNED, QR_OK = 800, 801, 802, 803
 
-# 扫码流程专用 Session：申请 key 与轮询共用同一个会话，网易云下发的设备 cookie（如 NMTID）
+# 扫码流程专用 Session：申请 key 与轮询共用同一个会话，音乐平台下发的设备 cookie（如 NMTID）
 # 才能从"申请二维码"延续到"查询状态"，与参考实现一致；也不污染全局 SESSION 里的账号 cookie。
 _QR_SESSION = requests.Session()
 
 
 def qr_login_url(key: str) -> str:
-    """扫码内容：网易云 App 识别的登录链接。"""
+    """扫码内容：音乐平台 App 识别的登录链接。"""
     return f"https://music.163.com/login?codekey={key}"
 
 
@@ -44,7 +44,7 @@ def _eapi_post(session: requests.Session, url: str, payload: Dict[str, Any]) -> 
     """用独立 Session 发 eapi 请求（登录阶段不污染全局共享 SESSION 的 cookie）。"""
     params = CryptoUtils.encrypt_params(url, payload)
     response = session.post(
-        url, headers=netease_headers(), cookies=APIConstants.DEFAULT_COOKIES.copy(),
+        url, headers=platform_headers(), cookies=APIConstants.DEFAULT_COOKIES.copy(),
         data={"params": params}, timeout=30,
     )
     response.raise_for_status()
@@ -86,12 +86,12 @@ def qr_check(key: str) -> Dict[str, Any]:
     return out
 
 
-class WebNetease:
-    """组合而非继承：持有一个 NeteaseMusic 实例供下载流程复用，并补充 Web 专用接口。"""
+class WebPlatform:
+    """组合而非继承：持有一个 PlatformMusic 实例供下载流程复用，并补充 Web 专用接口。"""
 
     def __init__(self, cookies: Dict[str, str]):
-        from netease import NeteaseMusic  # 延迟导入，避免与 netease 的导入顺序耦合
-        self.api = NeteaseMusic(cookies)
+        from music_api import PlatformMusic  # 延迟导入，避免与 music_api 的导入顺序耦合
+        self.api = PlatformMusic(cookies)
         self.cookies = cookies
         self.logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class WebNetease:
         if not self.cookies:
             return None
         try:
-            response = SESSION.post(APIConstants.USER_ACCOUNT_API, headers=netease_headers(),
+            response = SESSION.post(APIConstants.USER_ACCOUNT_API, headers=platform_headers(),
                                     cookies=self.cookies, timeout=30)
             response.raise_for_status()
             result = response.json()
@@ -115,7 +115,7 @@ class WebNetease:
             "nickname": profile.get("nickname", ""),
             "avatar": profile.get("avatarUrl", ""),
             "vip_type": vip_type,
-            "is_vip": vip_type != 0,  # 与 netease.is_cookie_valid 的判定一致
+            "is_vip": vip_type != 0,  # 与 music_api.is_cookie_valid 的判定一致
         }
 
     def get_daily_recommend(self) -> List[Dict[str, Any]]:
