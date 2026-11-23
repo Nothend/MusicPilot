@@ -44,3 +44,11 @@ def _post(self, url, **kw):
 
 
 FakeSession.post = _post
+
+
+def lb_defaults():
+    """推荐联动测试的基准设置：ListenBrainz 来源 + 与 Navidrome 联动（全新安装的默认值是音乐平台 + 仅下载，见 test_defaults.py）。"""
+    import lb_settings
+    s = lb_settings.defaults()
+    s["source"], s["mode"] = "listenbrainz", "navidrome"
+    return s

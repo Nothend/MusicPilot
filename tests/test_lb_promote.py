@@ -1,3 +1,4 @@
+from fakes import lb_defaults
 import errno
 import hashlib
 import json
@@ -102,7 +103,7 @@ class Env:
         self.main, self.disc = tmp_path / "songs", tmp_path / "discovery"
         self.main.mkdir(); self.disc.mkdir()
         self.nd = DiskND(self.main, self.disc)
-        self.settings = lb_settings.defaults()
+        self.settings = lb_defaults()
         self.settings["navidrome"].update(url="http://n", user="u", password="p", main_folder_id=1, discovery_folder_id=2)
         self.settings["dirs"].update(main=str(self.main), discovery=str(self.disc))
         self._n = 0

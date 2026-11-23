@@ -11,7 +11,7 @@ import lb_cleanup
 import lb_repo
 import lb_states as ST
 from db import Database
-from lb_settings import REC_LABELS, REC_TYPES
+from lb_settings import REC_LABELS, SOURCES, types_of
 
 SHOWN_STATES = ST.ALL_STATES
 
@@ -24,7 +24,7 @@ def dashboard(db: Database, settings: Dict[str, Any], current_task: Optional[Dic
     with db.lock:
         c = db.conn
         latest = {}
-        for t in REC_TYPES:
+        for t in types_of(settings["source"]):         # 只看当前推荐来源的列表
             b = c.execute("SELECT * FROM recommendation_batches WHERE type=? ORDER BY id DESC LIMIT 1", (t,)).fetchone()
             if b:
                 counts = {r["state"]: r["n"] for r in c.execute(
@@ -42,6 +42,8 @@ def dashboard(db: Database, settings: Dict[str, Any], current_task: Optional[Dic
     pv = lb_cleanup.preview(db, settings, now=now)
     return {
         "enabled": settings["enabled"],
+        "mode": settings["mode"], "channel": settings["channel"],
+        "source": settings["source"], "source_label": SOURCES[settings["source"]]["label"],
         "current_task": current_task,
         "recommended_today": recommended_today,
         "downloaded_today": downloaded_today,

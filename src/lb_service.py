@@ -13,6 +13,7 @@ import requests
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
+import download_channels
 import lb_cleanup
 import lb_love
 import lb_pipeline
@@ -73,19 +74,36 @@ def default_adapter_factory(store, settings: Dict[str, Any], request_delay: floa
     return PlatformAdapter(cookies, SongDownloader(cookies, api), quality, request_delay=request_delay)
 
 
+def default_netease_factory(store):
+    """取音乐平台「今日每日推荐」的函数：用当前登录账号（不是借用账号——借用账号只负责下载）。"""
+    from web_platform import WebPlatform
+
+    account = store.get().get("account")
+    if not account or not account.get("cookies"):
+        raise NotReady("请先扫码登录音乐平台账号（每日推荐取自登录账号）")
+    wn = WebPlatform(account["cookies"])
+    if wn.account_info() is None:
+        raise NotReady("音乐平台登录已失效，请重新扫码")
+    return wn.get_daily_recommend
+
+
 class LbService:
     def __init__(self, *, db: Database, kv: SettingsStore, tm: TaskManager, store=None,
                  notify: Optional[Callable[[str, str], Any]] = None,
                  lb_factory: Callable[[Dict[str, Any]], Any] = None,
                  nd_factory: Callable[[Dict[str, Any]], Any] = None,
                  adapter_factory: Optional[Callable[[Dict[str, Any], float], Any]] = None,
+                 netease_factory: Optional[Callable[[], Callable[[], List[Dict[str, Any]]]]] = None,
+                 library_checker_factory: Optional[Callable[[], Any]] = None,
                  request_delay: Callable[[], float] = lambda: 2.0,
                  now: Callable[[], datetime] = datetime.now, sleep: Callable[[float], None] = time.sleep):
         self.db, self.kv, self.tm, self.store = db, kv, tm, store
         self.notify = notify or (lambda title, body: None)
         self.lb_factory = lb_factory or (lambda s: ListenBrainzClient(s["listenbrainz"]["token"], s["listenbrainz"]["username"]))
         self.nd_factory = nd_factory or (lambda s: NavidromeClient(s["navidrome"]["url"], s["navidrome"]["user"], s["navidrome"]["password"]))
-        self.adapter_factory = adapter_factory or (lambda s, delay: default_adapter_factory(self.store, s, delay))
+        self.adapter_factory = adapter_factory or (lambda s, delay: download_channels.make(s["channel"], self.store, s, delay))
+        self.library_checker_factory = library_checker_factory or self._default_library_checker
+        self.netease_factory = netease_factory or (lambda: default_netease_factory(self.store))
         self.request_delay = request_delay
         self.now, self.sleep = now, sleep
         # 定时触发的同步任务因网络类错误失败时调用：(kind, types, attempt) -> 是否已安排自动重试
@@ -100,15 +118,23 @@ class LbService:
             raise NotReady("未知的任务类型")
         if kind in GATED or (kind == "love" and not dry_run):
             if not s["enabled"]:
-                raise NotReady("推荐联动还没有启用：请先在「设置」页的「推荐联动设置」里配置并打开总开关")
+                raise NotReady("推荐联动还没有启用：请先在「设置 → 推荐来源」里配置并打开总开关")
             if kind == "love" and not s["love"]["enabled"]:
                 raise NotReady("红心同步还没有启用（会写入 ListenBrainz，需要你在「红心同步」里明确打开）")
-        nd = s["navidrome"]
-        if not (nd["url"] and nd["user"] and nd["password"]):
-            raise NotReady("请先在设置里填写 Navidrome 地址、用户名和密码")
-        if kind in ("sync", "promote", "cleanup", "reindex", "dedup") and (nd["main_folder_id"] is None or nd["discovery_folder_id"] is None):
-            raise NotReady("请先在设置里选择 Navidrome 的主库和试听库（点「测试连接」后下拉选择）")
-        if kind in ("sync", "love") and not (s["listenbrainz"]["username"] and s["listenbrainz"]["token"]):
+        if s["mode"] == "folder":                       # 仅下载模式：不与 Navidrome 对接
+            if kind != "sync":
+                raise NotReady("当前是「仅下载到指定目录」模式，不与 Navidrome 对接，这个功能不可用（在「设置 → 音乐库与整理」里切换下载方式）")
+            if not s["dirs"]["output"]:
+                raise NotReady("请先在设置里填写下载目录")
+        else:
+            nd = s["navidrome"]
+            if not (nd["url"] and nd["user"] and nd["password"]):
+                raise NotReady("请先在设置里填写 Navidrome 地址、用户名和密码")
+            if kind in ("sync", "promote", "cleanup", "reindex", "dedup") and (nd["main_folder_id"] is None or nd["discovery_folder_id"] is None):
+                raise NotReady("请先在设置里选择 Navidrome 的主库和试听库（点「测试连接」后下拉选择）")
+        # 同步只有来源是 ListenBrainz 时才需要它的凭据；红心同步无论如何都要写 ListenBrainz
+        if (kind == "love" or (kind == "sync" and s["source"] == "listenbrainz")) and \
+                not (s["listenbrainz"]["username"] and s["listenbrainz"]["token"]):
             raise NotReady("请先在设置里填写 ListenBrainz 用户名和 Token")
 
     # ------------------------------------------------------------ 启动任务
@@ -131,13 +157,23 @@ class LbService:
         return self.tm.run_async(kind + ("_preview" if kind == "love" and dry_run else ""), trigger, body,
                                  on_done=lambda h, err: self._after(label, h, err, kind=kind, trigger=trigger, types=types, attempt=attempt))
 
+    def _default_library_checker(self):
+        """仅下载模式可选的外部音乐库去重：沿用「下载渠道」页里设置的音乐库（不使用 = None）。"""
+        from web_common import build_library_checker
+        return build_library_checker(self.store.get()["settings"]) if self.store is not None else None
+
     def _execute(self, kind: str, s: Dict[str, Any], h: RunHandle, *, types, scan, dry_run, params=None) -> None:
+        if kind == "sync" and s["mode"] == "folder":
+            return self._execute_folder_sync(s, h, types)
         nd = self.nd_factory(s)
         if kind == "sync":
             delay = self.request_delay()
             adapter = self.adapter_factory(s, delay)
-            lb_pipeline.run_sync(lb_pipeline.SyncDeps(self.db, s, self.lb_factory(s), nd, adapter, h, request_delay=delay,
-                                                      sleep=self.sleep, now=self.now, types=types))
+            from_lb = s["source"] == "listenbrainz"
+            lb_pipeline.run_sync(lb_pipeline.SyncDeps(
+                self.db, s, self.lb_factory(s) if from_lb else None, nd, adapter, h, request_delay=delay,
+                sleep=self.sleep, now=self.now, types=types,
+                netease_daily=None if from_lb else self.netease_factory()))
         elif kind == "promote":
             lb_promote.run_promote(lb_promote.PromoteDeps(self.db, s, nd, h, now=self.now))
         elif kind == "dedup":
@@ -165,6 +201,27 @@ class LbService:
             if dry_run:                          # 预览结果存起来，页面随时可看（可能是一份很长的清单）
                 self.kv.set(LOVE_PREVIEW_KEY, {"at": self.now().isoformat(timespec="seconds"), "plan": deps.plan,
                                                "stats": dict(h.stats)})
+
+    def _execute_folder_sync(self, s: Dict[str, Any], h: RunHandle, types) -> None:
+        delay = self.request_delay()
+        adapter = self.adapter_factory(s, delay)
+        from_lb = s["source"] == "listenbrainz"
+        checker = None
+        try:
+            checker = self.library_checker_factory()
+        except Exception as e:                         # 外部库连不上：只按下载目录去重，不中断
+            h.log(f"音乐库去重不可用（{type(e).__name__}: {e}），只按下载目录去重", "WARNING")
+        try:
+            lb_pipeline.run_sync(lb_pipeline.SyncDeps(
+                self.db, s, self.lb_factory(s) if from_lb else None, None, adapter, h, request_delay=delay,
+                sleep=self.sleep, now=self.now, types=types, library_checker=checker,
+                netease_daily=None if from_lb else self.netease_factory()))
+        finally:
+            if checker is not None:
+                try:
+                    checker.close()
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------ 结束后的通知
     @staticmethod

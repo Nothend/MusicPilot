@@ -1,3 +1,4 @@
+from fakes import lb_defaults
 import itertools
 import json
 from datetime import datetime, timedelta
@@ -122,7 +123,7 @@ class Env:
         self.disc_dir.mkdir()
         self.lb, self.nd = FakeLB(), FakeND()
         self.adapter = FakeAdapter(self.nd, self.disc_dir)
-        self.settings = lb_settings.defaults()
+        self.settings = lb_defaults()
         self.settings["navidrome"].update(url="http://n", user="u", password="p", main_folder_id=1, discovery_folder_id=2)
         self.settings["dirs"].update(main=str(self.main_dir), discovery=str(self.disc_dir))
         self.now = T0

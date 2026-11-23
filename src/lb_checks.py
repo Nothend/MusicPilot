@@ -8,8 +8,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import lb_localfs
 from lb_client import ListenBrainzClient, LBError
-from lb_settings import REC_LABELS, STAGING_DIRNAME, TRASH_DIRNAME
+from lb_settings import LB_TYPES, REC_LABELS, STAGING_DIRNAME, TRASH_DIRNAME
 from nd_client import NavidromeClient, NavidromeError
 
 
@@ -29,10 +30,10 @@ def test_listenbrainz(s: Dict[str, Any], client: ListenBrainzClient = None) -> D
         raise ValueError(str(e))
     latest: Dict[str, Dict[str, str]] = {}
     for p in lists:  # 新的在前，每类只取第一个
-        if p["type"] in REC_LABELS and p["type"] not in latest:
+        if p["type"] in LB_TYPES and p["type"] not in latest:
             latest[p["type"]] = {"title": p["title"], "date": p["date"][:10]}
     parts = [f"{REC_LABELS[t]} {latest[t]['date']}" if t in latest else f"{REC_LABELS[t]} 暂无"
-             for t in REC_LABELS]
+             for t in LB_TYPES]
     return {"message": f"连接成功（用户 {info['user_name']}）。最近歌单：" + "；".join(parts), "latest": latest}
 
 
@@ -77,6 +78,27 @@ def _mount_point(path: Path, mountinfo: Optional[str] = None) -> Optional[str]:
         if (real == mp or real.startswith(mp.rstrip("/") + "/") or mp == "/") and (best is None or len(mp) > len(best)):
             best = mp
     return best
+
+
+def check_output_dir(s: Dict[str, Any]) -> Dict[str, Any]:
+    """仅下载模式：下载目录能创建、可写（写入测试只碰自己的 .staging）。"""
+    out = Path(s["dirs"]["output"])
+    checks: List[Dict[str, Any]] = []
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        staging = out / STAGING_DIRNAME
+        staging.mkdir(exist_ok=True)
+        probe = staging / f".probe-{uuid.uuid4().hex[:8]}"
+        probe.write_bytes(b"x")
+        probe.unlink()
+        checks.append({"name": "下载目录", "ok": True, "warn": False, "msg": f"{out} 可读写（下载先写入 {STAGING_DIRNAME}，完成后移入）"})
+        n = sum(1 for _ in lb_localfs.iter_audio_files(out))
+        checks.append({"name": "已有歌曲", "ok": True, "warn": False,
+                       "msg": f"目录里已有 {n} 个音频文件，推荐的歌曲与它们重复时会跳过（读标签判断）"})
+    except OSError as e:
+        checks.append({"name": "下载目录", "ok": False, "warn": False, "msg": f"{out} 不可写：{e.strerror or e}。请检查容器的目录映射与权限"})
+    ok = all(c["ok"] for c in checks)
+    return {"ok": ok, "checks": checks, "message": "下载目录可用" if ok else "下载目录检查未通过"}
 
 
 def check_dirs(s: Dict[str, Any], mountinfo: Optional[str] = None) -> Dict[str, Any]:

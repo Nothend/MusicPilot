@@ -1,4 +1,5 @@
 """推荐联动的 HTTP 接口：真实 HTTP 服务（随机端口）+ 假的外部系统。"""
+from fakes import lb_defaults
 import json
 import threading
 import time
@@ -32,7 +33,7 @@ class Api:
         self.configure()
 
     def configure(self, enabled=True):
-        s = lb_settings.defaults()
+        s = lb_defaults()
         s["enabled"] = enabled
         s["listenbrainz"].update(username="me", token="tok")
         s["navidrome"].update(url="http://n", user="u", password="p", main_folder_id=1, discovery_folder_id=2)

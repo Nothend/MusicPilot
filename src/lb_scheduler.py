@@ -1,8 +1,10 @@
 """推荐联动的定时器：每 20 秒检查一次，到点就通过 LbService 启动对应任务。
 
 与现有「自动下载」定时器同一风格（容器 TZ 本地时间、错过的时间点不补跑），区别只在触发规则：
-- 每日同步  daily_time（每天）       → 只处理每日熟悉（Daily Jams）
-- 每周同步  weekly_weekday + weekly_time → 处理 Weekly Exploration / Weekly Jams
+（以下同步任务只在对应的推荐来源被选中时才触发，见设置里的「推荐来源」）
+- 每日同步  daily_time（每天）       → 来源=ListenBrainz：只处理每日熟悉（Daily Jams）
+- 每周同步  weekly_weekday + weekly_time → 来源=ListenBrainz：处理 Weekly Exploration / Weekly Jams
+- 每日推荐  netease_daily_time（每天）→ 来源=音乐平台：获取并下载今日每日推荐（该列表「启用」时）
 - 转正检查  每 promote_interval_min 分钟（需开启「自动转正」）
 - 红心同步  每 love_interval_min 分钟（需开启红心同步）
 - 过期清理  cleanup_time（每天，需开启「自动清理」）
@@ -48,17 +50,21 @@ class LbScheduler:
         sc, hhmm = s["schedule"], now.strftime("%H:%M")
         day = now.strftime("%Y-%m-%d ") + hhmm
         out: List[Dict[str, Any]] = []
-        if hhmm == sc["daily_time"] and s["strategy"]["daily"]["enabled"]:
+        lb_src = s["source"] == "listenbrainz"
+        if not lb_src and hhmm == sc["netease_daily_time"] and s["strategy"]["netease_daily"]["enabled"]:
+            out.append({"name": "netease_daily_sync", "kind": "sync", "types": ["netease_daily"], "key": day})
+        if lb_src and hhmm == sc["daily_time"] and s["strategy"]["daily"]["enabled"]:
             out.append({"name": "daily_sync", "kind": "sync", "types": ["daily"], "key": day})
-        if now.weekday() == sc["weekly_weekday"] and hhmm == sc["weekly_time"]:
+        if lb_src and now.weekday() == sc["weekly_weekday"] and hhmm == sc["weekly_time"]:
             types = [t for t in ("weekly_exploration", "weekly_jams") if s["strategy"][t]["enabled"]]
             if types:
                 out.append({"name": "weekly_sync", "kind": "sync", "types": types, "key": day})
-        if hhmm == sc["cleanup_time"] and s["discovery"]["auto_cleanup"]:
+        nd_mode = s["mode"] == "navidrome"            # 仅下载模式没有清理 / 转正 / 红心同步
+        if nd_mode and hhmm == sc["cleanup_time"] and s["discovery"]["auto_cleanup"]:
             out.append({"name": "cleanup", "kind": "cleanup", "types": None, "key": day})
-        if s["discovery"]["auto_promote"] and self._interval_due("promote", sc["promote_interval_min"], now):
+        if nd_mode and s["discovery"]["auto_promote"] and self._interval_due("promote", sc["promote_interval_min"], now):
             out.append({"name": "promote", "kind": "promote", "types": None, "key": "interval"})
-        if s["love"]["enabled"] and self._interval_due("love", sc["love_interval_min"], now):
+        if nd_mode and s["love"]["enabled"] and self._interval_due("love", sc["love_interval_min"], now):
             out.append({"name": "love", "kind": "love", "types": None, "key": "interval"})
         return out
 
@@ -154,18 +160,22 @@ class LbScheduler:
             t = now.replace(hour=h, minute=m, second=0, microsecond=0)
             return t if t > now else t + timedelta(days=1)
 
-        if s["strategy"]["daily"]["enabled"]:
+        lb_src = s["source"] == "listenbrainz"
+        if not lb_src and s["strategy"]["netease_daily"]["enabled"]:
+            out.append({"task": "每日推荐同步", "next": next_daily(sc["netease_daily_time"])})
+        if lb_src and s["strategy"]["daily"]["enabled"]:
             out.append({"task": "每日同步（每日熟悉）", "next": next_daily(sc["daily_time"])})
-        if any(s["strategy"][t]["enabled"] for t in ("weekly_exploration", "weekly_jams")):
+        if lb_src and any(s["strategy"][t]["enabled"] for t in ("weekly_exploration", "weekly_jams")):
             t = next_daily(sc["weekly_time"])
             while t.weekday() != sc["weekly_weekday"]:
                 t += timedelta(days=1)
             out.append({"task": "每周同步（Weekly）", "next": t})
-        if s["discovery"]["auto_cleanup"]:
+        nd_mode = s["mode"] == "navidrome"
+        if nd_mode and s["discovery"]["auto_cleanup"]:
             out.append({"task": "过期清理", "next": next_daily(sc["cleanup_time"])})
-        if s["discovery"]["auto_promote"]:
+        if nd_mode and s["discovery"]["auto_promote"]:
             out.append({"task": "转正检查", "next": max(now, self._interval_last["promote"] + timedelta(minutes=sc["promote_interval_min"]))})
-        if s["love"]["enabled"]:
+        if nd_mode and s["love"]["enabled"]:
             out.append({"task": "红心同步", "next": max(now, self._interval_last["love"] + timedelta(minutes=sc["love_interval_min"]))})
         return [{"task": o["task"], "next": o["next"].strftime("%Y-%m-%d %H:%M")} for o in sorted(out, key=lambda x: x["next"])]
 

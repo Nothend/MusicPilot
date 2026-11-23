@@ -1,3 +1,4 @@
+from fakes import lb_defaults
 import pytest
 
 import lb_settings as S
@@ -14,7 +15,7 @@ def test_defaults_safe_and_complete():
 
 def test_load_merges_partial_and_drops_unknown():
     s = S.load({"dirs": {"main": "/x"}, "strategy": {"daily": {"max_new": 5}}, "bogus": 1})
-    assert s["dirs"] == {"main": "/x", "discovery": "/music/discovery"}
+    assert s["dirs"] == {"main": "/x", "discovery": "/music/discovery", "output": "/app/downloads"}
     assert s["strategy"]["daily"] == {"enabled": True, "max_new": 5}
     assert "bogus" not in s
     assert S.load(None) == S.defaults() and S.load("garbage") == S.defaults()
@@ -124,6 +125,6 @@ def test_playlist_name_can_be_customised_and_validated():
 
 
 def test_view_exposes_chinese_label_english_name_and_description():
-    t = {x["key"]: x for x in S.view(S.defaults(), "UTC")["rec_types"]}
+    t = {x["key"]: x for x in S.view(lb_defaults(), "UTC")["rec_types"]}
     assert t["weekly_exploration"]["label"] == "每周探新" and t["weekly_exploration"]["en"] == "Weekly Exploration"
     assert all(len(x["label"]) <= 6 and x["desc"] for x in t.values())

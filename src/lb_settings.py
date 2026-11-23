@@ -10,18 +10,47 @@ import re
 from typing import Any, Dict, Optional
 
 SETTINGS_KEY = "lb.settings"
-REC_TYPES = ("daily", "weekly_exploration", "weekly_jams")
-# 页面/日志/通知里显示的中文名（≤6 字）、ListenBrainz 原名与含义说明
-REC_LABELS = {"daily": "每日熟悉", "weekly_exploration": "每周探新", "weekly_jams": "每周熟悉"}
-REC_EN = {"daily": "Daily Jams", "weekly_exploration": "Weekly Exploration", "weekly_jams": "Weekly Jams"}
+# 推荐「类型」= 一个来源提供的一种推荐列表；批次表 recommendation_batches.type 存的就是这里的 key
+LB_TYPES = ("daily", "weekly_exploration", "weekly_jams")
+NETEASE_DAILY = "netease_daily"          # 音乐平台自己的每日推荐（key 保持内部名，页面上不出现具体平台名）
+REC_TYPES = LB_TYPES + (NETEASE_DAILY,)
+# 推荐来源注册表：设置里选一个来源，「推荐」页就只显示它的列表。以后加来源只需在这里登记 + 实现取歌单（lb_pipeline.fetch_new_batches）
+SOURCES = {
+    "listenbrainz": {"label": "ListenBrainz", "types": LB_TYPES,
+                     "desc": "ListenBrainz 按你的听歌记录生成的每日熟悉 / 每周熟悉 / 每周探新"},
+    "netease": {"label": "音乐平台每日推荐", "types": (NETEASE_DAILY,),
+                "desc": "音乐平台账号里的「每日推荐」（每天约 30 首）"},
+}
+DEFAULT_SOURCE = "netease"                # 全新安装的默认：音乐平台每日推荐（升级前已保存过设置的老用户见 load()，保持原来的 ListenBrainz）
+
+# 下载渠道注册表：把「艺人+歌名（可带平台歌曲 id）」变成目录里的一个音频文件。实现与约定见 download_channels.py
+CHANNELS = {
+    "platform": {"label": "音乐平台", "desc": "在音乐平台上找到并下载无损（需要 VIP 账号，或借用 VIP 账号），自动写好标签和封面"},
+}
+DEFAULT_CHANNEL = "platform"
+
+# 下载方式：navidrome = 与 Navidrome 对接（试听库 → 歌单 → 点红心转正 → 过期清理）；folder = 只按推荐下载到指定目录
+MODES = {"navidrome": "与 Navidrome 联动", "folder": "仅下载到指定目录"}
+DEFAULT_MODE = "folder"                  # 全新安装的默认：只下载到目录，不连接 Navidrome（老用户同上，保持联动）
+
+
+def types_of(source: str) -> tuple:
+    return SOURCES.get(source, SOURCES[DEFAULT_SOURCE])["types"]
+
+
+# 页面/日志/通知里显示的中文名（≤6 字）、来源原名与含义说明
+REC_LABELS = {"daily": "每日熟悉", "weekly_exploration": "每周探新", "weekly_jams": "每周熟悉", NETEASE_DAILY: "每日推荐"}
+REC_EN = {"daily": "Daily Jams", "weekly_exploration": "Weekly Exploration", "weekly_jams": "Weekly Jams",
+          NETEASE_DAILY: "Daily Recommend"}
 REC_DESCS = {
+    NETEASE_DAILY: "音乐平台每天为你挑的歌，每日约 30 首；按曲目 id 直接下载，不需要搜索匹配",
     "daily": "每日更新，顺着你熟悉的口味延续：同风格、听着舒服的歌",
     "weekly_exploration": "每周一刷新，主打完全陌生的新艺人：探索新口味",
     "weekly_jams": "每周更新，顺着你熟悉的口味延续",
 }
 # Navidrome 歌单名模板：{date} 会替换为 ListenBrainz 歌单日期（如 2026-11-20）
 DEFAULT_PLAYLIST_NAMES = {"daily": "LB Daily Jams {date}", "weekly_exploration": "LB Weekly Exploration {date}",
-                          "weekly_jams": "LB Weekly Jams {date}"}
+                          "weekly_jams": "LB Weekly Jams {date}", NETEASE_DAILY: "每日推荐 {date}"}
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 STAGING_DIRNAME = ".staging"   # discovery 内的下载暂存目录（Navidrome 忽略以 . 开头的目录）
 TRASH_DIRNAME = ".trash"       # discovery 内的软删除目录
@@ -30,15 +59,20 @@ TRASH_DIRNAME = ".trash"       # discovery 内的软删除目录
 def defaults() -> Dict[str, Any]:
     return {
         "enabled": False,  # 总开关：配置完成前不做任何事（不调度、不下载）
+        "mode": DEFAULT_MODE,       # 下载方式（MODES 的 key）：folder 时不连接 Navidrome，没有试听库/转正/清理/红心同步
+        "channel": DEFAULT_CHANNEL, # 下载渠道（CHANNELS 的 key）
+        "source": DEFAULT_SOURCE,   # 推荐来源（SOURCES 的 key）：决定「推荐」页显示哪些列表、定时同步哪些
         "listenbrainz": {"username": "", "token": ""},
         "navidrome": {"url": "", "user": "", "password": "",
                       "main_folder_id": None, "discovery_folder_id": None},
         # 容器内路径（只写容器路径，不写宿主机路径）
-        "dirs": {"main": "/music/songs", "discovery": "/music/discovery"},
+        "dirs": {"main": "/music/songs", "discovery": "/music/discovery",
+                 "output": "/app/downloads"},    # output：仅下载模式的下载目录
         "strategy": {
             "daily": {"enabled": True, "max_new": 0},                 # 0 = 不限
             "weekly_exploration": {"enabled": True, "max_new": 30},
             "weekly_jams": {"enabled": True, "max_new": 30},
+            NETEASE_DAILY: {"enabled": True, "max_new": 0},           # enabled = 每天定时自动获取并下载
         },
         # 转正进主库时的命名：多歌手连接符。默认「, 」（社区通行，且与用户库中较早期目录一致）；
         # 填「 / 」会精确复现 MoviePilot 现在的写法（再换成全角：`A ／ B`）
@@ -52,7 +86,8 @@ def defaults() -> Dict[str, Any]:
         "love": {"enabled": False, "max_per_run": 100},
         # 时间均按容器 TZ 环境变量解释
         "schedule": {"daily_time": "08:30", "weekly_weekday": 0, "weekly_time": "10:00",
-                     "promote_interval_min": 30, "love_interval_min": 60, "cleanup_time": "04:00"},
+                     "promote_interval_min": 30, "love_interval_min": 60, "cleanup_time": "04:00",
+                     "netease_daily_time": "07:30"},     # 音乐平台每日推荐约 6 点刷新
     }
 
 
@@ -69,8 +104,20 @@ def _merge(base: Dict[str, Any], raw: Any) -> Dict[str, Any]:
     return base
 
 
+# 升级前就已保存过设置的安装：当时只有 ListenBrainz + Navidrome 联动这一种玩法，没有 source/mode 这两个键。
+# 它们不能被新的默认值悄悄改成「音乐平台 + 仅下载」，否则升级后原有的推荐联动会无声地停掉。
+LEGACY_SOURCE = "listenbrainz"
+LEGACY_MODE = "navidrome"
+
+
 def load(raw: Any) -> Dict[str, Any]:
-    return _merge(defaults(), raw)
+    s = _merge(defaults(), raw)
+    if isinstance(raw, dict) and raw:
+        if "source" not in raw:
+            s["source"] = LEGACY_SOURCE
+        if "mode" not in raw:
+            s["mode"] = LEGACY_MODE
+    return s
 
 
 # ---------------------------------------------------------------- 校验辅助
@@ -156,6 +203,21 @@ def apply(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
     s = copy.deepcopy(current)
     if "enabled" in payload:
         s["enabled"] = _bool(payload["enabled"])
+    if "mode" in payload:
+        m = _str(payload["mode"], "下载方式", 32)
+        if m not in MODES:
+            raise ValueError("未知的下载方式")
+        s["mode"] = m
+    if "channel" in payload:
+        c = _str(payload["channel"], "下载渠道", 32)
+        if c not in CHANNELS:
+            raise ValueError("未知的下载渠道")
+        s["channel"] = c
+    if "source" in payload:
+        src = _str(payload["source"], "推荐来源", 32)
+        if src not in SOURCES:
+            raise ValueError("未知的推荐来源")
+        s["source"] = src
 
     p = payload.get("listenbrainz")
     if isinstance(p, dict):
@@ -188,6 +250,8 @@ def apply(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
         for k, label in (("main", "主库目录"), ("discovery", "试听库目录")):
             if k in p:
                 d[k] = _abs_dir(p[k], label)
+        if "output" in p:
+            d["output"] = _abs_dir(p["output"], "下载目录")
         if _nested(d["main"], d["discovery"]):
             raise ValueError("主库目录与试听库目录不能相同或互相包含")
 
@@ -240,7 +304,8 @@ def apply(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
     p = payload.get("schedule")
     if isinstance(p, dict):
         sc = s["schedule"]
-        for k, label in (("daily_time", "每日同步时间"), ("weekly_time", "每周同步时间"), ("cleanup_time", "清理时间")):
+        for k, label in (("daily_time", "每日同步时间"), ("weekly_time", "每周同步时间"), ("cleanup_time", "清理时间"),
+                         ("netease_daily_time", "每日推荐同步时间")):
             if k in p:
                 sc[k] = _time(p[k], label)
         if "weekly_weekday" in p:
@@ -260,5 +325,9 @@ def view(s: Dict[str, Any], tz: str) -> Dict[str, Any]:
     v["navidrome"] = {"url": n["url"], "user": n["user"], "has_password": bool(n["password"]),
                       "main_folder_id": n["main_folder_id"], "discovery_folder_id": n["discovery_folder_id"]}
     v["timezone"] = tz
-    v["rec_types"] = [{"key": t, "label": REC_LABELS[t], "en": REC_EN[t], "desc": REC_DESCS[t]} for t in REC_TYPES]
+    # rec_types = 当前来源的列表（页面的设置项与「推荐歌单」按钮都只用它）；sources = 可选的来源
+    v["rec_types"] = [{"key": t, "label": REC_LABELS[t], "en": REC_EN[t], "desc": REC_DESCS[t]} for t in types_of(s["source"])]
+    v["sources"] = [{"key": k, "label": x["label"], "desc": x["desc"]} for k, x in SOURCES.items()]
+    v["channels"] = [{"key": k, "label": x["label"], "desc": x["desc"]} for k, x in CHANNELS.items()]
+    v["modes"] = [{"key": k, "label": x} for k, x in MODES.items()]
     return v

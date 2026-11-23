@@ -1,3 +1,4 @@
+from fakes import lb_defaults
 import json
 from datetime import datetime
 
@@ -28,7 +29,7 @@ def ids(db, bid):
     return [i["id"] for i in lb_repo.items_of_batch(db, bid)]
 
 
-S = lb_settings.defaults()
+S = lb_defaults()
 
 
 # ---------------------------------------------------------------- dashboard

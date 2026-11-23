@@ -1,3 +1,4 @@
+from fakes import lb_defaults
 import json
 from datetime import datetime, timedelta
 
@@ -62,7 +63,7 @@ class Env:
         self.db.migrate()
         self.tm = TaskManager(self.db)
         self.lb, self.nd = FakeLB(), FakeND()
-        self.settings = lb_settings.defaults()
+        self.settings = lb_defaults()
         self.settings["listenbrainz"].update(username="me", token="tok")
         self.now = NOW
 
@@ -294,7 +295,7 @@ def test_songs_without_artist_or_title_are_skipped(env):
 
 
 def test_settings_love_group_defaults_and_validation():
-    d = lb_settings.defaults()
+    d = lb_defaults()
     assert d["love"] == {"enabled": False, "max_per_run": 100}                 # 默认关闭
     s = lb_settings.apply(d, {"love": {"enabled": "true", "max_per_run": "50"}})
     assert s["love"] == {"enabled": True, "max_per_run": 50}

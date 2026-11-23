@@ -1,3 +1,4 @@
+from fakes import lb_defaults
 import json
 import threading
 import time
@@ -26,7 +27,7 @@ class Env:
         self.lb, self.nd = FakeLB(), FakeND()
         self.adapter = FakeAdapter(self.nd, self.disc)
         self.notes = []
-        s = lb_settings.defaults()
+        s = lb_defaults()
         s["enabled"] = enabled
         s["listenbrainz"].update(username="me", token="tok")
         s["navidrome"].update(url="http://n", user="u", password="p", main_folder_id=1, discovery_folder_id=2)
@@ -41,7 +42,7 @@ class Env:
         self.kv.set(lb_settings.SETTINGS_KEY, s)
 
     def edit(self, fn):
-        s = self.svc.settings() if hasattr(self, "svc") else lb_settings.defaults()
+        s = self.svc.settings() if hasattr(self, "svc") else lb_defaults()
         fn(s); self.save(s)
 
     def wait(self, timeout=10):

@@ -48,7 +48,7 @@ svc.request_delay, svc.sleep = (lambda: 0), (lambda x: None)
 svc.notify = lambda title, body: None                  # 页面冒烟测试不发 Bark 通知
 app.account_view = lambda refresh=False: {"logged_in": True, "invalid": False, "uid": 1, "nickname": "测试", "avatar": "", "is_vip": True, "quality": "lossless", "mode": "VIP"}
 
-s = lb_settings.defaults(); s['enabled'] = True
+s = lb_settings.defaults(); s['enabled'] = True; s['source'] = 'listenbrainz'; s['mode'] = 'navidrome'   # 页面测试按 ListenBrainz + Navidrome 联动造数据
 s['listenbrainz'].update(username='me', token='tok')
 s['navidrome'].update(url='http://n', user='u', password='p', main_folder_id=1, discovery_folder_id=2)
 s['dirs'].update(main=str(tmp / 'songs'), discovery=str(tmp / 'discovery'))

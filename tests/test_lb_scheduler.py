@@ -1,3 +1,4 @@
+from fakes import lb_defaults
 from datetime import datetime, timedelta
 
 import pytest
@@ -15,7 +16,7 @@ MON = datetime(2026, 11, 23, 8, 30, 0)
 
 class FakeSvc:
     def __init__(self):
-        self.s = lb_settings.defaults()
+        self.s = lb_defaults()
         self.s["enabled"] = True
         self.s["discovery"]["auto_promote"] = False       # 时间点类测试里时钟会大幅跳跃，间隔任务的测试再单独打开
         self.calls = []

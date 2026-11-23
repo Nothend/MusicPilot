@@ -14,6 +14,7 @@
 
 import logging
 import time
+from types import SimpleNamespace
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Sequence, Tuple
@@ -95,14 +96,16 @@ class PlatformAdapter:
         self.enrichers = list(enrichers)
 
     def download_song(self, artist: str, title: str, output_dir, *, artists: Optional[List[str]] = None,
-                      album: str = "", duration_ms: Optional[int] = None) -> AdapterResult:
+                      album: str = "", duration_ms: Optional[int] = None,
+                      platform_id: Optional[int] = None) -> AdapterResult:
+        """platform_id：推荐来源已经给出音乐平台歌曲 id（如平台自己的每日推荐）时直接按它下载，不搜索、不过滤。"""
         out_dir = Path(output_dir)
         target = Target(artist=artist, title=title, artists=list(artists or []),
                         duration_s=(duration_ms / 1000.0) if duration_ms else None)
 
-        # 1) 搜索 + 选歌
+        # 1) 搜索 + 选歌（已知平台歌曲 id 就跳过）
         try:
-            ranked = self._find(target, album)
+            ranked = [SimpleNamespace(id=platform_id)] if platform_id else self._find(target, album)
         except SearchRateLimited as e:
             return AdapterResult(False, error=str(e), error_kind="rate_limited")
         except APIException as e:

@@ -299,7 +299,15 @@ def _v10(conn: sqlite3.Connection) -> None:
         conn.execute(f'ALTER TABLE download_records RENAME COLUMN "{cols[3]}" TO platform_id')
 
 
-MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8, _v9, _v10]
+def _v11(conn: sqlite3.Connection) -> None:
+    """v11：推荐来源可插拔——音乐平台自己的每日推荐直接带着平台歌曲 id，下载时不必再搜索匹配。
+
+    tracks.platform_song_id：来源已经知道的音乐平台歌曲 id（ListenBrainz 来的歌为空串，仍走搜索）。
+    """
+    conn.execute("ALTER TABLE tracks ADD COLUMN platform_song_id TEXT NOT NULL DEFAULT ''")
+
+
+MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8, _v9, _v10, _v11]
 
 
 class DatabaseVersionError(RuntimeError):

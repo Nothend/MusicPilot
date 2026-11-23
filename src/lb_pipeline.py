@@ -17,13 +17,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import lb_dedup
+import lb_folder
 import lb_playlist
 import lb_repo
 import lb_states as ST
 from db import Database
-from lb_settings import REC_LABELS, REC_TYPES, STAGING_DIRNAME
+from lb_settings import NETEASE_DAILY, REC_LABELS, STAGING_DIRNAME, types_of
 from local_index import load_index, sync_index
-from matcher import LocalIndex, MatchResult, Target, is_soft_edition, match
+from matcher import LocalFile, LocalIndex, MatchResult, Target, is_soft_edition, match
 from task_manager import RunHandle
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,9 @@ class SyncDeps:
     request_delay: float = SEARCH_MIN_INTERVAL
     sleep: Callable[[float], None] = time.sleep
     now: Callable[[], datetime] = datetime.now
-    types: Optional[List[str]] = None            # 只处理这些类型（手动按钮/每日 vs 每周调度用）；None=全部已启用的
+    types: Optional[List[str]] = None            # 只处理这些类型（手动按钮/每日 vs 每周调度用）；None=当前推荐来源的全部列表
+    netease_daily: Optional[Callable[[], List[Dict[str, Any]]]] = None   # 来源=音乐平台时：取今日每日推荐（见 lb_service）
+    library_checker: Any = None                  # 仅下载模式：可选的外部音乐库去重（Navidrome / music-tag-web，只读查询）
     paused: bool = field(default=False, init=False)
 
 
@@ -75,8 +78,43 @@ def _parse_ts(s: Optional[str]) -> Optional[datetime]:
 
 
 # ---------------------------------------------------------------- 入口
+def run_sync_folder(d: SyncDeps) -> Dict[str, Any]:
+    """仅下载模式：不连接 Navidrome。取推荐 → 与下载目录（及可选的外部音乐库）去重 → 下载到下载目录 → 记 DOWNLOADED。
+    没有试听库、歌单、转正、过期清理：下载下来的文件就是最终结果，本流水线绝不删除或改动目录里已有的任何文件。"""
+    s, h = d.settings, d.handle
+    out = s["dirs"]["output"]
+    Path(out).mkdir(parents=True, exist_ok=True)
+    reset = lb_repo.recover_interrupted(d.db, d.now())
+    if reset:
+        h.log(f"上次运行被中断，已把 {reset} 首「下载中」的歌复位为待处理")
+    removed = clean_staging(out)
+    if removed:
+        h.log(f"已清理暂存区残留 {removed} 个文件")
+    fetch_new_batches(d)
+    index, n = lb_folder.build_index(out)
+    h.log(f"下载目录 {out} 里已有 {n} 首（读取标签用于去重）")
+    wanted = list(d.types) if d.types is not None else list(types_of(s["source"]))
+    touched: List[int] = []
+    for batch in lb_repo.active_batches(d.db):
+        if batch["type"] not in wanted:
+            continue
+        touched.append(batch["id"])
+        process_batch(d, batch, index)
+        if d.paused:
+            break
+    for bid in touched:
+        _maybe_finish_batch(d, bid)
+    if d.paused:
+        h.status = "paused"
+        h.summary = "下载渠道被限流，已暂停；未处理的歌曲保持待处理，下次运行继续"
+        h.log(h.summary, "WARNING")
+    return h.stats
+
+
 def run_sync(d: SyncDeps) -> Dict[str, Any]:
     s, h = d.settings, d.handle
+    if s["mode"] == "folder":
+        return run_sync_folder(d)
     nd_cfg = s["navidrome"]
     if nd_cfg["main_folder_id"] is None or nd_cfg["discovery_folder_id"] is None:
         raise ValueError("请先在设置里选择 Navidrome 的主库和试听库")
@@ -102,10 +140,11 @@ def run_sync(d: SyncDeps) -> Dict[str, Any]:
     h.log(f"本地索引：主库 {st['main']['total']} 首，试听库 {st['discovery']['total']} 首")
     index = load_index(d.db)
 
-    # 3) 逐批次、逐首处理
+    # 3) 逐批次、逐首处理（只处理当前推荐来源的批次；切换来源前遗留的批次切回来再继续）
     touched: List[int] = []
+    wanted = list(d.types) if d.types is not None else list(types_of(s["source"]))
     for batch in lb_repo.active_batches(d.db):
-        if d.types is not None and batch["type"] not in d.types:
+        if batch["type"] not in wanted:
             continue
         touched.append(batch["id"])
         process_batch(d, batch, index)
@@ -137,9 +176,47 @@ def run_sync(d: SyncDeps) -> Dict[str, Any]:
 
 # ---------------------------------------------------------------- 拉歌单
 def fetch_new_batches(d: SyncDeps) -> None:
+    """按当前推荐来源取新的推荐列表入库（来源注册表见 lb_settings.SOURCES）。"""
+    if d.settings["source"] == "netease":
+        _fetch_netease_daily(d)
+    else:
+        _fetch_listenbrainz(d)
+
+
+def _fetch_netease_daily(d: SyncDeps) -> None:
+    """音乐平台每日推荐：一天一批，歌曲自带平台歌曲 id（下载时不再搜索）。"""
+    h = d.handle
+    if d.types is not None and NETEASE_DAILY not in d.types:
+        return
+    label = REC_LABELS[NETEASE_DAILY]
+    if not d.settings["strategy"][NETEASE_DAILY]["enabled"]:
+        return
+    if d.netease_daily is None:
+        raise ValueError("没有可用的音乐平台账号来获取每日推荐")
+    # 平台每天约 6 点刷新：6 点前取到的仍是前一天的推荐，按前一天记，避免占用「今天」这个批次名
+    day = (d.now() - timedelta(hours=6)).strftime("%Y-%m-%d")
+    key = f"netease:daily:{day}"
+    if lb_repo.batch_known(d.db, key):
+        h.log(f"{label}：{day} 的已处理过")
+        return
+    tracks = d.netease_daily()
+    if not tracks:
+        h.log(f"{label}：今天没有取到推荐歌曲，跳过")
+        return
+    pl = {"tracks": [{
+        "recording_mbid": "", "title": t["name"] or "", "artist": ", ".join(a for a in t["artists"] if a),
+        "artists": [{"name": a} for a in t["artists"] if a], "album": t.get("album") or "",
+        "duration_ms": t.get("duration_ms"), "platform_song_id": t["id"],
+    } for t in tracks if t.get("id") and t.get("name")]}
+    bid = lb_repo.create_batch(d.db, NETEASE_DAILY, {"mbid": key, "title": f"{label} {day}", "date": day}, pl, d.now())
+    h.log(f"{label}：获取到 {day} 的推荐，共 {len(pl['tracks'])} 首（批次 {bid}）")
+    h.add("recommended", len(pl["tracks"]))
+
+
+def _fetch_listenbrainz(d: SyncDeps) -> None:
     h = d.handle
     headers = d.lb.created_for(25)       # 新的在前
-    for rtype in REC_TYPES:
+    for rtype in types_of("listenbrainz"):
         if d.types is not None and rtype not in d.types:
             continue
         label = REC_LABELS[rtype]
@@ -218,24 +295,57 @@ def _process_item(d: SyncDeps, it, index: LocalIndex, cap: int, new_ok: int) -> 
     h, s, db = d.handle, d.settings, d.db
     who = f"{it['artist']} - {it['title']}"
     target = _target(it)
+    folder = s["mode"] == "folder"
 
-    # 1) 本地匹配（主库优先）
+    if folder:
+        if _folder_existing(d, it, target, index, who):
+            return 0
+    elif _local_existing(d, it, index, target, who):
+        return 0
+    return _download_or_defer(d, it, target, cap, new_ok, who, folder, index)
+
+
+def _folder_existing(d: SyncDeps, it, target: Target, index: LocalIndex, who: str) -> bool:
+    """仅下载模式的「已有」判断：先看下载目录（读标签，按联动模式同样的规则匹配），再看可选的外部音乐库。"""
+    h, db = d.handle, d.db
+    r = match(index, target)
+    if r.status in ("main", "multiple"):  # 目录里有多个候选时也算已有
+        lb_repo.set_state(db, it["id"], ST.LOCAL_MAIN, note=f"下载目录里已有（{r.level or '多个候选'}）", now=d.now(),
+                          reason_kind="exists", reason="下载目录里已有")
+        h.add("local_main"); h.log(f"目录已有：{who}")
+        return True
+    if d.library_checker is not None:
+        try:
+            if d.library_checker.exists(it["title"], [a for a in json.loads(it["artists_json"] or "[]") if a], it["album"] or ""):
+                lb_repo.set_state(db, it["id"], ST.LOCAL_MAIN, note="音乐库中已有", now=d.now(),
+                                  reason_kind="exists", reason="音乐库中已有")
+                h.add("local_main"); h.log(f"音乐库已有：{who}")
+                return True
+        except Exception as e:                   # 外部库临时不可用：当作没有，继续下载（最坏是多下一首，不会少下）
+            h.log(f"音乐库去重查询失败（{type(e).__name__}），按未收录处理：{who}", "WARNING")
+    return False
+
+
+def _local_existing(d: SyncDeps, it, index: LocalIndex, target: Target, who: str) -> bool:
+    """联动模式的本地判断：主库/试听库已有 → 直接复用；多个候选 → 待人工选择；更早条目已下载 → 复用。True = 已处理。
+    """
+    h, db = d.handle, d.db
     r = match(index, target)
     if r.status == "main":
         lb_repo.set_state(db, it["id"], ST.LOCAL_MAIN, note=f"主库已有（{r.level}）", now=d.now(),
                           local_file_id=r.chosen.nd_song_id, starred=1 if r.chosen.starred else 0,
                           **_variant_hint(r, target))
         h.add("local_main"); h.log(f"主库已有：{who}")
-        return 0
+        return True
     if r.status == "discovery":
         _adopt_discovery(d, it, r, target)
         h.add("local_discovery"); h.log(f"试听库已有：{who}")
-        return 0
+        return True
     if r.status == "multiple":
         lb_repo.save_candidates(db, it["id"], r.candidates)
         lb_repo.set_state(db, it["id"], ST.MULTIPLE_MATCH, note=r.note, now=d.now(), reason_kind="multiple", reason=r.note)
         h.add("multiple"); h.log(f"本地有多个无法区分的候选，等待人工选择：{who}", "WARNING")
-        return 0
+        return True
 
     # 2) 同一首歌在更早的条目里已落地到试听库（索引还没刷新）：直接复用
     prior = lb_repo.last_item_for_track(db, it["track_id"], it["id"], (ST.LOCAL_DISCOVERY,))
@@ -244,8 +354,14 @@ def _process_item(d: SyncDeps, it, index: LocalIndex, cap: int, new_ok: int) -> 
                           local_file_id=prior["local_file_id"], local_path=prior["local_path"],
                           entered_discovery_at=prior["entered_discovery_at"] or lb_repo.now_iso(d.now()))
         h.add("local_discovery"); h.log(f"复用已下载：{who}")
-        return 0
+        return True
+    return False
 
+
+def _download_or_defer(d: SyncDeps, it, target: Target, cap: int, new_ok: int, who: str, folder: bool,
+                       index: Optional[LocalIndex]) -> int:
+    """本地没有这首：冷却期 / 数量上限 / 下载。返回本次新增的成功下载数（0/1）。"""
+    h, s, db = d.handle, d.settings, d.db
     # 3) 未找到的冷却期内不重复搜索
     nf = lb_repo.last_item_for_track(db, it["track_id"], it["id"], (ST.NOT_FOUND,))
     if nf and (_parse_ts(nf["next_retry_at"]) or datetime.min) > d.now():
@@ -265,13 +381,23 @@ def _process_item(d: SyncDeps, it, index: LocalIndex, cap: int, new_ok: int) -> 
     attempt = lb_repo.download_attempts(db, it["id"]) + 1
     lb_repo.set_state(db, it["id"], ST.DOWNLOADING, note=f"第 {attempt} 次尝试", now=d.now())
     h.log(f"开始下载：{who}")
-    res = d.adapter.download_song(it["artist"], it["title"], s["dirs"]["discovery"],
+    psid = it["platform_song_id"]
+    res = d.adapter.download_song(it["artist"], it["title"], s["dirs"]["output" if folder else "discovery"],
                                   artists=[a for a in json.loads(it["artists_json"] or "[]") if a],
-                                  album=it["album"], duration_ms=it["duration_ms"])
+                                  album=it["album"], duration_ms=it["duration_ms"],
+                                  **({"platform_id": int(psid)} if psid else {}))
     lb_repo.record_download(db, it["id"], attempt, ok=res.success, platform_id=res.platform_id, error_kind=res.error_kind,
                             error=res.error, path=res.path or "", quality=res.quality, file_type=res.file_type, now=d.now())
-    d.sleep(max(d.request_delay, SEARCH_MIN_INTERVAL))     # 每首搜索之间留足间隔
+    # 每首搜索之间留足间隔；按平台歌曲 id 直接下载的没有搜索，只按用户设置的请求间隔
+    d.sleep(d.request_delay if psid else max(d.request_delay, SEARCH_MIN_INTERVAL))
 
+    if res.success and folder:
+        lb_repo.set_state(db, it["id"], ST.DOWNLOADED, note="下载成功" + ("（复用已存在文件）" if res.reused else ""),
+                          now=d.now(), local_path=res.path, reason_kind="", reason="")
+        lf = lb_folder.read_local_file(Path(res.path))       # 同一轮里再遇到同一首：算已有
+        index.add(lf or LocalFile(nd_song_id=res.path, library=lb_folder.FOLDER_LIBRARY, artist=target.artist, title=target.title))
+        h.add("downloaded"); h.log(f"下载成功：{who}（{res.file_type}）")
+        return 1
     if res.success:
         lb_repo.set_state(db, it["id"], ST.LOCAL_DISCOVERY, note="下载成功" + ("（复用已存在文件）" if res.reused else ""),
                           now=d.now(), local_path=res.path, entered_discovery_at=lb_repo.now_iso(d.now()),

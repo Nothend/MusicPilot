@@ -349,6 +349,8 @@ class App:
             return lb_checks.test_navidrome(s)
         if target == "dirs":
             return lb_checks.check_dirs(s)
+        if target == "output":
+            return lb_checks.check_output_dir(s)
         raise ValueError("未知的测试项")
 
     # ------------------------------------------------------------ 推荐联动：任务与查询

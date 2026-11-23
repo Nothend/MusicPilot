@@ -12,6 +12,7 @@
   PROMOTING        红心转正进行中（移动文件 → 扫描 → 校验红心）
   PROMOTED         已转正到主库
   EXPIRED          试听期满已清理
+  DOWNLOADED       已下载到指定目录（仅下载模式：不与 Navidrome 对接，到此为止，没有后续生命周期）
 """
 
 from typing import Dict, FrozenSet
@@ -27,16 +28,17 @@ SKIPPED = "SKIPPED"
 PROMOTING = "PROMOTING"
 PROMOTED = "PROMOTED"
 EXPIRED = "EXPIRED"
+DOWNLOADED = "DOWNLOADED"
 
 ALL_STATES = (PENDING, DOWNLOADING, LOCAL_MAIN, LOCAL_DISCOVERY, NOT_FOUND, DOWNLOAD_FAILED,
-              MULTIPLE_MATCH, SKIPPED, PROMOTING, PROMOTED, EXPIRED)
+              MULTIPLE_MATCH, SKIPPED, PROMOTING, PROMOTED, EXPIRED, DOWNLOADED)
 
 # 有本地文件可用（歌单里会放进去）的状态
 PLAYABLE = frozenset({LOCAL_MAIN, LOCAL_DISCOVERY, PROMOTING, PROMOTED})
 
 TRANSITIONS: Dict[str, FrozenSet[str]] = {
     PENDING: frozenset({DOWNLOADING, LOCAL_MAIN, LOCAL_DISCOVERY, NOT_FOUND, MULTIPLE_MATCH, SKIPPED}),
-    DOWNLOADING: frozenset({LOCAL_DISCOVERY, NOT_FOUND, DOWNLOAD_FAILED, PENDING}),
+    DOWNLOADING: frozenset({LOCAL_DISCOVERY, DOWNLOADED, NOT_FOUND, DOWNLOAD_FAILED, PENDING}),
     DOWNLOAD_FAILED: frozenset({PENDING, LOCAL_MAIN, LOCAL_DISCOVERY}),          # 重试：先回 PENDING
     NOT_FOUND: frozenset({PENDING, LOCAL_MAIN, LOCAL_DISCOVERY}),                # 冷却期满重试 / 手动放入库后被识别
     MULTIPLE_MATCH: frozenset({PENDING, LOCAL_MAIN, LOCAL_DISCOVERY}),           # 人工选择后
@@ -46,6 +48,7 @@ TRANSITIONS: Dict[str, FrozenSet[str]] = {
     PROMOTING: frozenset({PROMOTED, LOCAL_DISCOVERY}),                            # 失败回到 LOCAL_DISCOVERY
     PROMOTED: frozenset(),
     EXPIRED: frozenset(),
+    DOWNLOADED: frozenset(),
 }
 
 

@@ -141,5 +141,6 @@ class WebPlatform:
                 "artists": [a.get("name", "") for a in (song.get("ar") or [])],
                 "album": al.get("name", ""),
                 "picUrl": al.get("picUrl", ""),
+                "duration_ms": song.get("dt") or None,
             })
         return tracks

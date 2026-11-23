@@ -29,6 +29,7 @@ def now_iso(now: Optional[datetime] = None) -> str:
 # ---------------------------------------------------------------- 歌曲与批次
 def _upsert_track(conn: sqlite3.Connection, t: Dict[str, Any], now: str) -> int:
     mbid = (t.get("recording_mbid") or "").lower()
+    psid = str(t.get("platform_song_id") or "")
     names = json.dumps([a.get("name", "") for a in t.get("artists", [])], ensure_ascii=False)
     if mbid:
         row = conn.execute("SELECT id FROM tracks WHERE recording_mbid=?", (mbid,)).fetchone()
@@ -38,11 +39,13 @@ def _upsert_track(conn: sqlite3.Connection, t: Dict[str, Any], now: str) -> int:
         row = conn.execute("SELECT id FROM tracks WHERE recording_mbid='' AND artist=? AND title=?",
                            (t["artist"], t["title"])).fetchone()
         if row:
+            if psid:        # 归并到老记录时补上来源给的平台歌曲 id（已有的不改）
+                conn.execute("UPDATE tracks SET platform_song_id=? WHERE id=? AND platform_song_id=''", (psid, row["id"]))
             return row["id"]
     cur = conn.execute(
-        "INSERT INTO tracks(recording_mbid, artist, title, album, duration_ms, artists_json, created_at) "
-        "VALUES(?,?,?,?,?,?,?)",
-        (mbid, t["artist"], t["title"], t.get("album") or "", t.get("duration_ms"), names, now))
+        "INSERT INTO tracks(recording_mbid, artist, title, album, duration_ms, artists_json, platform_song_id, created_at) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (mbid, t["artist"], t["title"], t.get("album") or "", t.get("duration_ms"), names, psid, now))
     return cur.lastrowid
 
 
@@ -83,7 +86,7 @@ def finish_batch(db: Database, batch_id: int) -> None:
 
 # ---------------------------------------------------------------- 条目
 _ITEM_SELECT = (
-    "SELECT i.*, t.recording_mbid, t.artist, t.title, t.album, t.duration_ms, t.artists_json, "
+    "SELECT i.*, t.recording_mbid, t.artist, t.title, t.album, t.duration_ms, t.artists_json, t.platform_song_id, "
     "b.type AS batch_type, b.lb_title, b.lb_date "
     "FROM recommendation_items i JOIN tracks t ON t.id=i.track_id JOIN recommendation_batches b ON b.id=i.batch_id ")
 

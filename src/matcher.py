@@ -212,6 +212,14 @@ class LocalIndex:
             for a in artist_set(f.artist) | artist_set(f.album_artist):
                 self.by_artist.setdefault(a, []).append(f)
 
+    def add(self, f: LocalFile) -> None:
+        """增量加入一个文件（仅下载模式：本轮刚下载的歌，同一轮里再遇到就算已有）。"""
+        self.files.append(f)
+        if f.mbid:
+            self.by_mbid.setdefault(f.mbid.lower(), []).append(f)
+        for a in artist_set(f.artist) | artist_set(f.album_artist):
+            self.by_artist.setdefault(a, []).append(f)
+
     def candidates_for(self, names: FrozenSet[str], library: str) -> List[LocalFile]:
         seen, out = set(), []
         for a in names:
