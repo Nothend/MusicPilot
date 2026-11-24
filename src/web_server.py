@@ -348,8 +348,11 @@ class App:
 
     def lb_settings_update(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         with self._lb_lock:  # 读-改-写串行，避免两次保存互相覆盖
-            new = lb_settings.apply(self.lb_current(), payload)
+            cur = self.lb_current()
+            new = lb_settings.apply(cur, payload)
             self.kv.set(lb_settings.SETTINGS_KEY, new)
+            if new["openlist"]["enabled"] and not cur["openlist"]["enabled"]:    # 新启用了网盘渠道：以前没找到的歌值得再试
+                lb_repo.clear_not_found_cooldown(self.store.db)
         return self.lb_settings_view()
 
     def lb_test(self, target: str, payload: Dict[str, Any]) -> Dict[str, Any]:

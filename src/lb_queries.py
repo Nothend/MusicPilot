@@ -237,6 +237,8 @@ def item_action(db: Database, item_id: int, action: str, arg: str = "", now: Opt
 
     elif action == "retry":
         if it["state"] in RETRYABLE:
+            if it["state"] == ST.NOT_FOUND:      # 同一首歌更早批次里的「未找到」记录也在冷却：一并解除，否则重试会被它挡回去
+                lb_repo.clear_not_found_cooldown(db, it["track_id"])
             lb_repo.set_state(db, item_id, ST.PENDING, note="手动重试", now=now, retry_count=0, next_retry_at=None,
                               reason_kind="", reason="")
             with db.transaction() as c:          # 让下次同步重新处理该批次

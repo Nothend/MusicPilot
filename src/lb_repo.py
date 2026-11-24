@@ -163,6 +163,17 @@ def last_item_for_track(db: Database, track_id: int, exclude_item_id: int, state
             "ORDER BY id DESC LIMIT 1", (track_id, exclude_item_id, *states)).fetchone()
 
 
+def clear_not_found_cooldown(db: Database, track_id: Optional[int] = None) -> int:
+    """让「未找到」的冷却期立即结束（下一次处理时重新搜索）。track_id=None 表示全部。返回受影响的条目数。
+
+    用于：用户手动重试某首歌（它在更早批次里的「未找到」记录不能再把它挡回冷却）；新启用了一个下载渠道（以前没找到的歌值得再试）。
+    """
+    with db.transaction() as c:
+        cur = c.execute("UPDATE recommendation_items SET next_retry_at=NULL WHERE state=? AND next_retry_at IS NOT NULL"
+                        + (" AND track_id=?" if track_id is not None else ""), (ST.NOT_FOUND,) + ((track_id,) if track_id is not None else ()))
+        return cur.rowcount
+
+
 def item_with_nd_id(db: Database, nd_song_id: str, exclude_item_id: int) -> Optional[sqlite3.Row]:
     """已关联到同一个 Navidrome 歌曲、且知道真实磁盘路径或入库时间的最近一条（用于继承 local_path/entered_discovery_at）。"""
     with db.lock:
