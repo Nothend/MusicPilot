@@ -18,10 +18,12 @@ from typing import Any, Callable, Dict, List, Optional
 
 import lb_dedup
 import lb_folder
+import lb_period
 import lb_playlist
 import lb_repo
 import lb_states as ST
 from db import Database
+from lb_client import batch_date
 from lb_settings import NETEASE_DAILY, REC_LABELS, STAGING_DIRNAME, types_of
 from local_index import load_index, sync_index
 from matcher import LocalFile, LocalIndex, MatchResult, Target, is_soft_edition, match
@@ -50,6 +52,7 @@ class SyncDeps:
     download: bool = True                        # False = 只获取推荐并与本地比对，不下载（没有的歌保持待处理）
     only_items: Optional[List[int]] = None       # 只处理这些条目（页面上点某首的「下载」）；None=全部
     library_checker: Any = None                  # 仅下载模式：可选的外部音乐库去重（Navidrome / music-tag-web，只读查询）
+    kv: Any = None                               # 键值存储：记录每个列表最近一次获取的结果（空列表时页面据此解释原因）
     paused: bool = field(default=False, init=False)
 
 
@@ -98,7 +101,7 @@ def run_sync_folder(d: SyncDeps) -> Dict[str, Any]:
     wanted = list(d.types) if d.types is not None else list(types_of(s["source"]))
     touched: List[int] = []
     for batch in lb_repo.active_batches(d.db):
-        if batch["type"] not in wanted:
+        if batch["type"] not in wanted or _stale(d, batch):
             continue
         touched.append(batch["id"])
         process_batch(d, batch, index)
@@ -146,7 +149,7 @@ def run_sync(d: SyncDeps) -> Dict[str, Any]:
     touched: List[int] = []
     wanted = list(d.types) if d.types is not None else list(types_of(s["source"]))
     for batch in lb_repo.active_batches(d.db):
-        if batch["type"] not in wanted:
+        if batch["type"] not in wanted or _stale(d, batch):
             continue
         touched.append(batch["id"])
         process_batch(d, batch, index)
@@ -176,6 +179,11 @@ def run_sync(d: SyncDeps) -> Dict[str, Any]:
     return h.stats
 
 
+def _stale(d: SyncDeps, batch) -> bool:
+    """已过了当前周期的批次不再自动处理（不下载、不重试）；只有用户在页面上点某一首的操作（only_items）才会处理。"""
+    return d.only_items is None and not lb_period.is_current(batch["type"], (batch["lb_date"] or "")[:10], d.now())
+
+
 # ---------------------------------------------------------------- 拉歌单
 def fetch_new_batches(d: SyncDeps) -> None:
     """按当前推荐来源取新的推荐列表入库（来源注册表见 lb_settings.SOURCES）。"""
@@ -200,10 +208,12 @@ def _fetch_netease_daily(d: SyncDeps) -> None:
     key = f"netease:daily:{day}"
     if lb_repo.batch_known(d.db, key):
         h.log(f"{label}：{day} 的已处理过")
+        lb_period.record_status(d.kv, NETEASE_DAILY, "ok", d.now(), day)
         return
     tracks = d.netease_daily()
     if not tracks:
         h.log(f"{label}：今天没有取到推荐歌曲，跳过")
+        lb_period.record_status(d.kv, NETEASE_DAILY, "none", d.now(), day)
         return
     pl = {"tracks": [{
         "recording_mbid": "", "title": t["name"] or "", "artist": ", ".join(a for a in t["artists"] if a),
@@ -211,11 +221,13 @@ def _fetch_netease_daily(d: SyncDeps) -> None:
         "duration_ms": t.get("duration_ms"), "platform_song_id": t["id"],
     } for t in tracks if t.get("id") and t.get("name")]}
     bid = lb_repo.create_batch(d.db, NETEASE_DAILY, {"mbid": key, "title": f"{label} {day}", "date": day}, pl, d.now())
+    lb_period.record_status(d.kv, NETEASE_DAILY, "ok", d.now(), day)
     h.log(f"{label}：获取到 {day} 的推荐，共 {len(pl['tracks'])} 首（批次 {bid}）")
     h.add("recommended", len(pl["tracks"]))
 
 
 def _fetch_listenbrainz(d: SyncDeps) -> None:
+    """只取「当前周期」的歌单：每日 = 今天，每周 = 本周。LB 上最新的一份已过期就不入库，只记下结果供页面解释。"""
     h = d.handle
     headers = d.lb.created_for(25)       # 新的在前
     for rtype in types_of("listenbrainz"):
@@ -226,17 +238,26 @@ def _fetch_listenbrainz(d: SyncDeps) -> None:
             continue
         hdr = next((x for x in headers if x["type"] == rtype), None)
         if hdr is None:
-            h.log(f"{label}：ListenBrainz 暂无该类型歌单")
+            h.log(f"{label}：ListenBrainz 上暂无该类型歌单")
+            lb_period.record_status(d.kv, rtype, "none", d.now())
+            continue
+        hdate = batch_date(hdr.get("title", ""), hdr.get("date", ""))
+        if not lb_period.is_current(rtype, hdate, d.now()):
+            h.log(f"{label}：ListenBrainz {lb_period.period_word(rtype)}还没有生成（最近一份是 {hdate}，已过期，不使用）", "WARNING")
+            lb_period.record_status(d.kv, rtype, "stale", d.now(), hdate)
             continue
         if lb_repo.batch_known(d.db, hdr["mbid"]):
-            h.log(f"{label}：最新一份（{hdr['date'][:10]}）已处理过")
+            h.log(f"{label}：{hdate} 的歌单已处理过")
+            lb_period.record_status(d.kv, rtype, "ok", d.now(), hdate)
             continue
         pl = d.lb.playlist(hdr["mbid"])
         if not pl["tracks"]:
-            h.log(f"{label}：最新一份（{hdr['date'][:10]}）是空的，跳过")
+            h.log(f"{label}：{hdate} 的歌单是空的，跳过")
+            lb_period.record_status(d.kv, rtype, "empty", d.now(), hdate)
             continue
         bid = lb_repo.create_batch(d.db, rtype, hdr, pl, d.now())
-        h.log(f"{label}：获取到新歌单 {hdr['date'][:10]}，共 {len(pl['tracks'])} 首（批次 {bid}）")
+        lb_period.record_status(d.kv, rtype, "ok", d.now(), hdate)
+        h.log(f"{label}：获取到新歌单 {hdate}，共 {len(pl['tracks'])} 首（批次 {bid}）")
         h.add("recommended", len(pl["tracks"]))
 
 

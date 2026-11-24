@@ -44,6 +44,7 @@ def env(tmp_path):
     db = Database(tmp_path / "t.sqlite"); db.migrate()
     kv = SettingsStore(db)
     svc, clock = FakeSvc(), Clock(MON.replace(hour=0, minute=0))
+    svc.db = db
     sched = LbScheduler(svc, kv, now=clock)
     sched.svc, sched.kv = svc, kv
     return sched, svc, clock, kv
@@ -73,8 +74,42 @@ def test_weekly_sync_only_on_its_weekday_and_covers_both_weekly_types(env):
     at(clock, "10:00", MON)                                        # 周一 10:00（默认）
     assert sched.tick() == ["weekly_sync"]
     assert svc.calls == [("sync", "schedule", ["weekly_exploration", "weekly_jams"])]
+    for t in ("weekly_exploration", "weekly_jams"):                 # 本周的两份都已取到
+        add_batch(env[3], t, "2026-11-23")
     at(clock, "10:00", MON + timedelta(days=1)); assert sched.tick() == []         # 周二不触发
     at(clock, "10:00", MON + timedelta(days=7)); assert sched.tick() == ["weekly_sync"]
+
+
+def add_batch(kv, rtype, date):
+    import lb_repo
+    lb_repo.create_batch(kv.db, rtype, {"mbid": f"{rtype}{date}", "title": "t", "date": date + "T12:00:00+00:00"}, {"tracks": []})
+
+
+def test_missing_weekly_lists_are_retried_daily_until_this_weeks_arrive(env):
+    sched, svc, clock, kv = env
+    at(clock, "10:00", MON); assert sched.tick() == ["weekly_sync"]                 # 每周同步日：照常（LB 还没生成）
+    svc.calls.clear()
+    add_batch(kv, "weekly_jams", "2026-09-14")                                      # 只有 9 月的旧批次：不算本周
+    at(clock, "10:00", MON + timedelta(days=1))
+    assert sched.tick() == ["weekly_retry"]                                         # 周二：两个都缺 → 补取
+    assert svc.calls == [("sync", "schedule", ["weekly_exploration", "weekly_jams"])]
+    add_batch(kv, "weekly_exploration", "2026-11-23")                               # 周二取到了探新
+    svc.calls.clear()
+    at(clock, "10:00", MON + timedelta(days=2))
+    assert sched.tick() == ["weekly_retry"] and svc.calls == [("sync", "schedule", ["weekly_jams"])]    # 周三只补缺的
+    add_batch(kv, "weekly_jams", "2026-11-25")
+    at(clock, "10:00", MON + timedelta(days=3)); assert sched.tick() == []          # 都取到了：不再补取
+    svc.s["strategy"]["weekly_jams"]["enabled"] = False
+
+
+def test_weekly_retry_ignores_disabled_types_and_is_off_for_netease(env):
+    sched, svc, clock, kv = env
+    svc.s["strategy"]["weekly_exploration"]["enabled"] = False
+    at(clock, "10:00", MON + timedelta(days=1)); sched.tick()
+    assert svc.calls == [("sync", "schedule", ["weekly_jams"])]
+    svc.calls.clear(); svc.s["source"] = "netease"
+    at(clock, "10:00", MON + timedelta(days=2)); sched.tick()
+    assert all(c[2] != ["weekly_jams"] for c in svc.calls)
 
 
 def test_weekly_skips_disabled_types_and_does_not_fire_if_all_disabled(env):

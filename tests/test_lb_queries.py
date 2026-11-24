@@ -35,7 +35,8 @@ S = lb_defaults()
 # ---------------------------------------------------------------- dashboard
 def test_dashboard_on_empty_database(db):
     d = Q.dashboard(db, S, None, NOW)
-    assert d["recommended_today"] == 0 and d["latest_batches"] == {} and d["last_sync"] is None
+    assert d["recommended_today"] == 0 and d["last_sync"] is None
+    assert [x["type"] for x in d["current"]] == ["daily", "weekly_exploration", "weekly_jams"] and all(x["batch_id"] is None and x["reason"] for x in d["current"])
     assert d["pending_cleanup"]["files"] == 0 and "enabled" not in d and d["current_task"] is None
 
 
@@ -55,8 +56,9 @@ def test_dashboard_aggregates(db):
     lb_repo.record_playlist(db, b1, "LB x", "pl1", 3)
     d = Q.dashboard(db, S, {"type": "sync"}, NOW)
     assert d["recommended_today"] == 3 and d["downloaded_today"] == 1
-    assert d["latest_batches"]["weekly_jams"]["counts"] == {ST.LOCAL_MAIN: 1, ST.LOCAL_DISCOVERY: 1, ST.NOT_FOUND: 1}
-    assert d["latest_batches"]["daily"]["total"] == 2 and "weekly_exploration" not in d["latest_batches"]
+    cur = {x["type"]: x for x in d["current"]}
+    assert cur["weekly_jams"]["counts"] == {ST.LOCAL_MAIN: 1, ST.LOCAL_DISCOVERY: 1, ST.NOT_FOUND: 1}
+    assert cur["daily"]["total"] == 2 and cur["weekly_exploration"]["batch_id"] is None
     assert d["last_sync"]["stats"] == {"downloaded": 1} and d["last_run"]["type"] == "sync"
     assert d["totals"]["in_discovery"] == 1 and d["totals"]["not_found"] == 1
     assert d["pending_cleanup"] == {"files": 1, "items": 1, "protected": d["pending_cleanup"]["protected"], "retention_days": 7}   # 11-01 入库 → 已过期

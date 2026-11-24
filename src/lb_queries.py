@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import lb_cleanup
+import lb_period
 import lb_repo
 import lb_states as ST
 from db import Database
@@ -17,20 +18,37 @@ SHOWN_STATES = ST.ALL_STATES
 
 
 # ---------------------------------------------------------------- Dashboard
+def current_lists(db: Database, settings: Dict[str, Any], kv: Any, now: datetime) -> List[Dict[str, Any]]:
+    """推荐页要展示的列表：当前推荐来源的每个类型各一项，只含「当前周期」（每日=今天，每周=本周）的歌单。
+
+    没有当前周期的歌单时 batch_id 为 None，并给出 `reason`（为什么是空的）；绝不拿前期的歌单顶替。
+    """
+    status = (kv.get(lb_period.FETCH_STATUS_KEY) if kv is not None else None) or {}
+    out = []
+    with db.lock:
+        for t in types_of(settings["source"]):
+            start = lb_period.period_start(t, now)
+            b = db.conn.execute("SELECT * FROM recommendation_batches WHERE type=? AND lb_date>=? ORDER BY id DESC LIMIT 1",
+                                (t, start)).fetchone()
+            row = {"type": t, "label": REC_LABELS[t], "period_start": start, "batch_id": None, "date": "", "total": 0,
+                   "status": "", "counts": {}, "reason": "", "fetch": status.get(t)}
+            if b:
+                row.update(batch_id=b["id"], date=(b["lb_date"] or "")[:10], total=b["total"], status=b["status"], counts={
+                    r["state"]: r["n"] for r in db.conn.execute(
+                        "SELECT state, COUNT(*) AS n FROM recommendation_items WHERE batch_id=? GROUP BY state", (b["id"],))})
+            else:
+                row["reason"] = lb_period.empty_reason(t, status.get(t), settings["source"])
+            out.append(row)
+    return out
+
+
 def dashboard(db: Database, settings: Dict[str, Any], current_task: Optional[Dict[str, Any]],
-              now: Optional[datetime] = None) -> Dict[str, Any]:
+              now: Optional[datetime] = None, kv: Any = None) -> Dict[str, Any]:
     now = now or datetime.now()
     today = now.strftime("%Y-%m-%d")
+    lists = current_lists(db, settings, kv, now)
     with db.lock:
         c = db.conn
-        latest = {}
-        for t in types_of(settings["source"]):         # 只看当前推荐来源的列表
-            b = c.execute("SELECT * FROM recommendation_batches WHERE type=? ORDER BY id DESC LIMIT 1", (t,)).fetchone()
-            if b:
-                counts = {r["state"]: r["n"] for r in c.execute(
-                    "SELECT state, COUNT(*) AS n FROM recommendation_items WHERE batch_id=? GROUP BY state", (b["id"],))}
-                latest[t] = {"batch_id": b["id"], "label": REC_LABELS[t], "date": (b["lb_date"] or "")[:10], "total": b["total"],
-                             "status": b["status"], "counts": counts}
         recommended_today = c.execute("SELECT COALESCE(SUM(total),0) FROM recommendation_batches WHERE fetched_at LIKE ?",
                                       (today + "%",)).fetchone()[0]
         downloaded_today = c.execute("SELECT COUNT(*) FROM download_records WHERE ok=1 AND at LIKE ?", (today + "%",)).fetchone()[0]
@@ -46,7 +64,7 @@ def dashboard(db: Database, settings: Dict[str, Any], current_task: Optional[Dic
         "current_task": current_task,
         "recommended_today": recommended_today,
         "downloaded_today": downloaded_today,
-        "latest_batches": latest,
+        "current": lists,
         "last_sync": _run_row(last_sync),
         "last_run": _run_row(last_run),
         "totals": {"promoted": state_totals.get(ST.PROMOTED, 0), "in_discovery": state_totals.get(ST.LOCAL_DISCOVERY, 0),
@@ -92,17 +110,30 @@ def _run_row(r) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------- 推荐歌单
-def batches(db: Database, rec_type: str = "", limit: int = 30) -> List[Dict[str, Any]]:
+def batches(db: Database, rec_type: str = "", limit: int = 30, now: Optional[datetime] = None,
+            types: Optional[tuple] = None) -> List[Dict[str, Any]]:
+    """历史批次（新的在前，记录页「往期推荐」用）：带各状态数量，以及是否仍是当前周期的歌单。"""
+    now = now or datetime.now()
     q, args = "SELECT * FROM recommendation_batches", []
     if rec_type:
         q += " WHERE type=?"
         args.append(rec_type)
+    elif types:                                  # 不指定类型时只列这些类型（当前推荐来源的列表）
+        q += " WHERE type IN (%s)" % ",".join("?" * len(types))
+        args.extend(types)
     q += " ORDER BY id DESC LIMIT ?"
     args.append(limit)
     with db.lock:
         rows = db.conn.execute(q, args).fetchall()
+        counts: Dict[int, Dict[str, int]] = {}
+        ids = [r["id"] for r in rows]
+        if ids:
+            for r in db.conn.execute("SELECT batch_id, state, COUNT(*) AS n FROM recommendation_items WHERE batch_id IN (%s) "
+                                     "GROUP BY batch_id, state" % ",".join("?" * len(ids)), ids):
+                counts.setdefault(r["batch_id"], {})[r["state"]] = r["n"]
     return [{"id": r["id"], "type": r["type"], "label": REC_LABELS.get(r["type"], r["type"]), "date": (r["lb_date"] or "")[:10],
-             "total": r["total"], "status": r["status"], "fetched_at": r["fetched_at"]} for r in rows]
+             "total": r["total"], "status": r["status"], "fetched_at": r["fetched_at"], "counts": counts.get(r["id"], {}),
+             "current": lb_period.is_current(r["type"], r["lb_date"] or "", now)} for r in rows]
 
 
 def items(db: Database, batch_id: int, state: str = "") -> Dict[str, Any]:

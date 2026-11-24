@@ -306,6 +306,6 @@ def test_dashboard_only_shows_the_active_sources_latest_batches(nenv):
     import lb_queries
     nenv.sync()
     d = lb_queries.dashboard(nenv.db, nenv.settings, None, nenv.now)
-    assert d["source"] == "netease" and list(d["latest_batches"]) == ["netease_daily"]
+    assert d["source"] == "netease" and [x["type"] for x in d["current"]] == ["netease_daily"] and d["current"][0]["batch_id"]
     nenv.settings["source"] = "listenbrainz"
-    assert lb_queries.dashboard(nenv.db, nenv.settings, None, nenv.now)["latest_batches"] == {}
+    assert all(x["batch_id"] is None for x in lb_queries.dashboard(nenv.db, nenv.settings, None, nenv.now)["current"])   # 切回 LB：没有 LB 的批次

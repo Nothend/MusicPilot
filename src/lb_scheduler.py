@@ -4,6 +4,7 @@
 （以下同步任务只在对应的推荐来源被选中时才触发，见设置里的「推荐来源」）
 - 每日同步  daily_time（每天）       → 来源=ListenBrainz：只处理每日熟悉（Daily Jams）
 - 每周同步  weekly_weekday + weekly_time → 来源=ListenBrainz：处理 Weekly Exploration / Weekly Jams
+- 每周补取  非每周同步日的 weekly_time → 本周（周一起）还没取到的每周列表再取一次，取到为止
 - 每日推荐  netease_daily_time（每天）→ 来源=音乐平台：获取并下载今日每日推荐（该列表「启用」时）
 - 转正检查  每 promote_interval_min 分钟（需开启「自动转正」）
 - 红心同步  每 love_interval_min 分钟（需开启红心同步）
@@ -19,6 +20,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 
+import lb_period
 from lb_service import LbService, NotReady, LABELS
 from settings_store import SettingsStore
 from task_manager import TaskBusy
@@ -57,6 +59,10 @@ class LbScheduler:
             types = [t for t in ("weekly_exploration", "weekly_jams") if s["strategy"][t]["enabled"]]
             if types:
                 out.append({"name": "weekly_sync", "kind": "sync", "types": types, "key": day})
+        if lb_src and now.weekday() != sc["weekly_weekday"] and hhmm == sc["weekly_time"]:
+            missing = self._missing_weekly(s, now)        # 本周的每周歌单还没取到（LB 晚生成/漏生成）：每天同一时间再取一次，取到为止
+            if missing:
+                out.append({"name": "weekly_retry", "kind": "sync", "types": missing, "key": day})
         nd_mode = s["mode"] == "navidrome"            # 仅下载模式没有清理 / 转正 / 红心同步
         if nd_mode and hhmm == sc["cleanup_time"] and s["discovery"]["auto_cleanup"]:
             out.append({"name": "cleanup", "kind": "cleanup", "types": None, "key": day})
@@ -64,6 +70,19 @@ class LbScheduler:
             out.append({"name": "promote", "kind": "promote", "types": None, "key": "interval"})
         if nd_mode and s["love"]["enabled"] and self._interval_due("love", sc["love_interval_min"], now):
             out.append({"name": "love", "kind": "love", "types": None, "key": "interval"})
+        return out
+
+    def _missing_weekly(self, s: Dict[str, Any], now: datetime) -> List[str]:
+        """已启用、但本周（周一起）还没有批次的每周列表。"""
+        out = []
+        with self.svc.db.lock:
+            for t in ("weekly_exploration", "weekly_jams"):
+                if not s["strategy"][t]["enabled"]:
+                    continue
+                n = self.svc.db.conn.execute("SELECT COUNT(*) FROM recommendation_batches WHERE type=? AND lb_date>=?",
+                                             (t, lb_period.period_start(t, now))).fetchone()[0]
+                if not n:
+                    out.append(t)
         return out
 
     def _interval_due(self, name: str, minutes: int, now: datetime) -> bool:

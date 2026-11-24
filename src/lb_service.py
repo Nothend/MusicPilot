@@ -174,7 +174,7 @@ class LbService:
             lb_pipeline.run_sync(lb_pipeline.SyncDeps(
                 self.db, s, self.lb_factory(s) if from_lb else None, nd, adapter, h, request_delay=delay,
                 sleep=self.sleep, now=self.now, types=types, download=bool(p.get("download", True)),
-                only_items=p.get("item_ids"), netease_daily=None if from_lb else self.netease_factory()))
+                only_items=p.get("item_ids"), netease_daily=None if from_lb else self.netease_factory(), kv=self.kv))
         elif kind == "promote":
             lb_promote.run_promote(lb_promote.PromoteDeps(self.db, s, nd, h, now=self.now))
         elif kind == "dedup":
@@ -217,7 +217,7 @@ class LbService:
                 self.db, s, self.lb_factory(s) if from_lb else None, None, adapter, h, request_delay=delay,
                 sleep=self.sleep, now=self.now, types=types, library_checker=checker,
                 download=bool(p.get("download", True)), only_items=p.get("item_ids"),
-                netease_daily=None if from_lb else self.netease_factory()))
+                netease_daily=None if from_lb else self.netease_factory(), kv=self.kv))
         finally:
             if checker is not None:
                 try:
@@ -278,7 +278,7 @@ class LbService:
     # ------------------------------------------------------------ 页面用的查询
     def dashboard(self) -> Dict[str, Any]:
         s = self.settings()
-        d = lb_queries.dashboard(self.db, s, self.tm.current(), self.now())
+        d = lb_queries.dashboard(self.db, s, self.tm.current(), self.now(), self.kv)
         try:                                       # 还缺什么配置才能同步：页面据此在顶部给出提示和「去设置」
             self.check_ready("sync", s)
             d["setup_issue"] = ""

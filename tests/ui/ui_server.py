@@ -40,6 +40,8 @@ class UiND(FakeND):
 
 
 lb, nd = UiLB(), UiND()
+from datetime import datetime
+lb.clock = datetime.now                     # 歌单按「今天」生成：页面只展示当前周期的歌单
 adapter = FakeAdapter(nd, tmp / 'discovery')
 svc = app.lb
 svc.lb_factory, svc.nd_factory = (lambda s: lb), (lambda s: nd)
@@ -60,11 +62,12 @@ nd.indexed_disc = [ndsong('d2', 'A', 'Song 2')]
 tracks = [lbtrack(i) for i in range(1, 8)]
 lb.add('weekly_jams', 'plJ', tracks)
 lb.add('daily', 'plD', [lbtrack(11, title='日推一'), lbtrack(12, title='日推二')])
+lb.add('weekly_exploration', 'plOld', [lbtrack(21)], date='2026-09-14T12:00:00+00:00')     # LB 上最新的探新还是 9 月的：本周列表应为空并说明原因
 adapter.script = {'Song 4': 'not_found', 'Song 5': 'download', 'Song 6': 'only_mp3'}
 db = app.store.db
 with app.tm.run('sync', 'manual') as h:
     from lb_pipeline import SyncDeps, run_sync
-    run_sync(SyncDeps(db, s, lb, nd, adapter, h, request_delay=0, sleep=lambda x: None))
+    run_sync(SyncDeps(db, s, lb, nd, adapter, h, request_delay=0, sleep=lambda x: None, kv=app.kv))
 # 一首「试听库」歌与主库疑似重复（§17.16）：给第一个有本地文件的试听库条目造一个主库同曲，一个 exact 级
 with db.transaction() as c:
     dup_item = c.execute("SELECT i.id FROM recommendation_items i JOIN tracks t ON t.id=i.track_id JOIN recommendation_batches b ON b.id=i.batch_id "
@@ -73,7 +76,7 @@ with db.transaction() as c:
               "VALUES('dupm','main','主库歌手','主库同名歌','主库专辑',231,31457280,'wav','t')")
 lb_repo.add_dup_suspects(db, dup_item, [('dupm', 'exact', 25)])
 # 一个 MULTIPLE_MATCH 条目 + 候选
-bid = lb_repo.create_batch(db, 'weekly_exploration', {'mbid': 'plE', 'title': 't', 'date': '2026-11-16T00:00:00+00:00'},
+bid = lb_repo.create_batch(db, 'weekly_exploration', {'mbid': 'plE', 'title': 't', 'date': '2026-09-07T12:00:00+00:00'},
     {'tracks': [{'recording_mbid': 'mbE1', 'artist': '多歌手', 'title': '难选的歌', 'album': '专辑', 'duration_ms': 200000, 'artists': []}]})
 item = lb_repo.items_of_batch(db, bid)[0]['id']
 with db.transaction() as c:

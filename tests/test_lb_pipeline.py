@@ -13,6 +13,7 @@ import lb_settings
 import lb_states as ST
 from audio import make_flac
 from db import Database
+from settings_store import SettingsStore
 from lb_adapter import AdapterResult
 from lb_pipeline import SyncDeps, run_sync
 from nd_client import NavidromeError
@@ -27,7 +28,11 @@ class FakeLB:
         self.headers, self.playlists = [], {}
         self.playlist_calls = []
 
-    def add(self, rtype, mbid, tracks, date="2026-11-20T00:00:00+00:00"):
+    clock = None          # 测试可设为「当前时间」函数：不指定 date 时歌单按它的日期生成（只认当前周期的歌单）
+
+    def add(self, rtype, mbid, tracks, date=None):
+        if date is None:
+            date = self.clock().strftime("%Y-%m-%dT12:00:00+00:00") if self.clock else "2026-11-20T12:00:00+00:00"
         self.headers.insert(0, {"mbid": mbid, "title": f"{rtype} {mbid}", "date": date, "type": rtype,
                                 "expires_at": "", "source_patch": ""})
         self.playlists[mbid] = {"mbid": mbid, "title": "x", "date": date, "tracks": tracks}
@@ -126,12 +131,14 @@ class Env:
         self.settings = lb_defaults()
         self.settings["navidrome"].update(url="http://n", user="u", password="p", main_folder_id=1, discovery_folder_id=2)
         self.settings["dirs"].update(main=str(self.main_dir), discovery=str(self.disc_dir))
+        self.kv = SettingsStore(self.db)
         self.now = T0
+        self.lb.clock = lambda: self.now
 
     def sync(self, types=None, trigger="manual"):
         with self.tm.run("sync", trigger) as h:
             lb_pipeline.run_sync(SyncDeps(self.db, self.settings, self.lb, self.nd, self.adapter, h,
-                                          request_delay=0, sleep=lambda s: None, now=lambda: self.now, types=types))
+                                          request_delay=0, sleep=lambda s: None, now=lambda: self.now, types=types, kv=self.kv))
         return self.tm.recent_runs()[0]
 
     def items(self, batch_id=1):
@@ -198,8 +205,8 @@ def test_batch_marked_done_when_nothing_left_to_do(env):
 
 # ---------------------------------------------------------------- 拉取歌单的规则
 def test_only_newest_playlist_per_type_and_processed_once(env):
-    env.lb.add("weekly_jams", "old", [lbtrack(1)], date="2026-09-07T00:00:00+00:00")
-    env.lb.add("weekly_jams", "new", [lbtrack(2)], date="2026-09-14T00:00:00+00:00")
+    env.lb.add("weekly_jams", "old", [lbtrack(1)], date="2026-11-09T12:00:00+00:00")
+    env.lb.add("weekly_jams", "new", [lbtrack(2)], date="2026-11-16T12:00:00+00:00")
     env.sync()
     assert env.lb.playlist_calls == ["new"]
     assert env.db.conn.execute("SELECT lb_playlist_mbid FROM recommendation_batches").fetchall()[0][0] == "new"
@@ -352,13 +359,13 @@ def test_not_found_cooldown_blocks_repeat_search_until_it_expires(env):
     env.lb.add("weekly_jams", "p1", [lbtrack(1, mbid="same")])
     env.adapter.script = {"Song 1": "not_found"}
     env.sync()
-    env.lb.add("weekly_exploration", "p2", [lbtrack(1, mbid="same")])           # 另一份歌单又推荐了同一首
     env.now = T0 + timedelta(days=2)
+    env.lb.add("weekly_exploration", "p2", [lbtrack(1, mbid="same")])           # 另一份歌单又推荐了同一首
     env.sync()
     assert env.adapter.calls == ["Song 1"]                                       # 冷却期内不再搜索
     assert env.states(2) == {"Song 1": ST.NOT_FOUND} and env.items(2)["Song 1"]["reason_kind"] == "cooldown"
-    env.lb.add("daily", "p3", [lbtrack(1, mbid="same")])
     env.now = T0 + timedelta(days=8)                                             # 冷却 7 天已过
+    env.lb.add("daily", "p3", [lbtrack(1, mbid="same")])
     env.adapter.script = {}
     env.sync()
     assert env.adapter.calls == ["Song 1", "Song 1"] and env.states(3) == {"Song 1": ST.LOCAL_DISCOVERY}
@@ -397,8 +404,8 @@ def test_inherits_known_path_and_entry_time_for_already_adopted_discovery_file(e
     env.lb.add("weekly_jams", "p1", [lbtrack(1, mbid="m")])
     env.sync()
     first = env.items(1)["Song 1"]
-    env.lb.add("daily", "p2", [lbtrack(1, mbid="m")])
     env.now = T0 + timedelta(days=3)
+    env.lb.add("daily", "p2", [lbtrack(1, mbid="m")])
     env.sync()
     second = env.items(2)["Song 1"]
     assert second["state"] == ST.LOCAL_DISCOVERY and second["entered_discovery_at"] == first["entered_discovery_at"]

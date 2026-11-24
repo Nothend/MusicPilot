@@ -547,7 +547,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/lb/schedule":
                 return {"upcoming": app.lb_scheduler.upcoming(), "timezone": os.environ.get("TZ") or time.tzname[0]}
             if path == "/api/lb/batches":
-                return {"batches": lb_queries.batches(app.store.db, q("type"))}
+                try:
+                    limit = max(1, min(200, int(q("limit") or 30)))
+                except ValueError:
+                    limit = 30
+                return {"batches": lb_queries.batches(app.store.db, q("type"), limit, now=app.lb.now(),
+                                                      types=lb_settings.types_of(app.lb.settings()["source"]))}
             if path == "/api/lb/items":
                 try:
                     batch = int(q("batch"))

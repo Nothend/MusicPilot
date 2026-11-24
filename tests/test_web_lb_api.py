@@ -1,4 +1,5 @@
 """推荐联动的 HTTP 接口：真实 HTTP 服务（随机端口）+ 假的外部系统。"""
+from datetime import datetime
 from fakes import lb_defaults
 import json
 import threading
@@ -20,6 +21,7 @@ class Api:
         (tmp_path / "dl").mkdir()
         self.app = web_server.App(tmp_path / "data", tmp_path / "dl")
         self.lb, self.nd = FakeLB(), FakeND()
+        self.lb.clock = datetime.now
         self.main, self.disc = tmp_path / "songs", tmp_path / "discovery"
         self.main.mkdir(); self.disc.mkdir()
         self.adapter = FakeAdapter(self.nd, self.disc)
@@ -67,7 +69,7 @@ def api(tmp_path, monkeypatch):
 # ---------------------------------------------------------------- 只读接口
 def test_read_endpoints_work_on_an_empty_database(api):
     d = api.get("/api/lb/dashboard").json()
-    assert d["setup_issue"] == "" and d["latest_batches"] == {} and d["current_task"] is None
+    assert d["setup_issue"] == "" and all(x["batch_id"] is None for x in d["current"]) and d["current_task"] is None
     assert api.get("/api/lb/batches").json() == {"batches": []}
     assert api.get("/api/lb/runs").json() == {"runs": [], "current": None}
     assert api.get("/api/lb/cleanup/preview").json()["due_files"] == 0
@@ -147,7 +149,8 @@ def test_action_runs_a_sync_and_the_page_can_follow_its_logs(api):
     later = api.get(f"/api/lb/run?id={rid}&after={detail['logs'][-3]['id']}").json()["logs"]       # 增量拉取日志
     assert len(later) == 2
     d = api.get("/api/lb/dashboard").json()
-    assert d["latest_batches"]["weekly_jams"]["counts"] == {ST.LOCAL_DISCOVERY: 2} and d["downloaded_today"] == 2
+    cur = {x["type"]: x for x in d["current"]}
+    assert cur["weekly_jams"]["counts"] == {ST.LOCAL_DISCOVERY: 2} and d["downloaded_today"] == 2
     assert api.get("/api/lb/runs").json()["runs"][0]["id"] == rid
 
 
