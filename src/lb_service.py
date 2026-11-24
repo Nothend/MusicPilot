@@ -18,6 +18,7 @@ import lb_cleanup
 import lb_love
 import lb_pipeline
 import lb_dedup
+import lb_review
 import lb_promote
 import lb_queries
 import lb_settings
@@ -31,8 +32,8 @@ from task_manager import RunHandle, TaskBusy, TaskManager
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("sync", "promote", "cleanup", "reindex", "love", "dedup")
-LABELS = {"sync": "推荐同步", "promote": "红心转正", "cleanup": "过期清理", "reindex": "同步索引", "love": "红心同步", "dedup": "重复去重"}
+KINDS = ("sync", "promote", "cleanup", "reindex", "love", "dedup", "review")
+LABELS = {"sync": "推荐同步", "promote": "红心转正", "cleanup": "过期清理", "reindex": "同步索引", "love": "红心同步", "dedup": "重复去重", "review": "网盘文件审核"}
 LOVE_PREVIEW_KEY = "lb.love_preview"
 LOVE_UNRESOLVED_KEY = "lb.love_unresolved"
 
@@ -69,7 +70,8 @@ def default_adapter_factory(store, settings: Dict[str, Any], request_delay: floa
             raise NotReady("借用账号已不是VIP，请更换")
         cookies, api = borrowed["cookies"], bw.api
     quality = effective_quality(state["settings"], True)
-    return PlatformAdapter(cookies, SongDownloader(cookies, api), quality, request_delay=request_delay)
+    from openlist_channel import wrap_with_openlist
+    return wrap_with_openlist(PlatformAdapter(cookies, SongDownloader(cookies, api), quality, request_delay=request_delay), settings)
 
 
 def default_netease_factory(store):
@@ -117,7 +119,7 @@ class LbService:
         if kind == "love" and not dry_run and not s["love"]["enabled"]:
             raise NotReady("红心同步还没有启用（会写入 ListenBrainz，需要你在「红心同步」里明确打开）")
         if s["mode"] == "folder":                       # 仅下载模式：不与 Navidrome 对接
-            if kind != "sync":
+            if kind not in ("sync", "review"):
                 raise NotReady("当前是「仅下载到指定目录」模式，不与 Navidrome 对接，这个功能不可用（在「设置 → 音乐库与整理」里切换下载方式）")
             if not s["dirs"]["output"]:
                 raise NotReady("请先在设置里填写下载目录")
@@ -151,6 +153,9 @@ class LbService:
                                              str(p.get("main_id") or ""))
             params = p
 
+        if kind == "review":
+            p = params or {}
+            lb_review.validate(self.db, int(p.get("item_id") or 0), str(p.get("choice", "")))
         def body(h: RunHandle) -> None:
             self._execute(kind, s, h, types=types, scan=scan, dry_run=dry_run, params=params or {})
 
@@ -164,6 +169,9 @@ class LbService:
 
     def _execute(self, kind: str, s: Dict[str, Any], h: RunHandle, *, types, scan, dry_run, params=None) -> None:
         p = params or {}
+        if kind == "review":                       # 只动本地文件与数据库，两种下载方式都能用，不需要 Navidrome
+            lb_review.run_review(lb_review.ReviewDeps(self.db, s, h, int(p["item_id"]), str(p["choice"]), now=self.now))
+            return
         if kind == "sync" and s["mode"] == "folder":
             return self._execute_folder_sync(s, h, types, p)
         nd = self.nd_factory(s)

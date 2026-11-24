@@ -110,8 +110,8 @@ def test_mb_search_is_proxied_and_errors_are_400(api, monkeypatch):
 
 def test_todo_counts_everything_waiting_for_the_user(api):
     db = api.app.store.db
-    assert api.get("/api/lb/todo").json() == {"multiple": 0, "dup": 0, "love_unresolved": 0, "total": 0,
-                                              "multiple_batch": None, "dup_batch": None}
+    assert api.get("/api/lb/todo").json() == {"multiple": 0, "dup": 0, "love_unresolved": 0, "review": 0, "total": 0,
+                                              "multiple_batch": None, "dup_batch": None, "review_batch": None}
     tr = lambda n: {"recording_mbid": f"m{n}", "artist": "A", "title": f"T{n}", "album": "", "duration_ms": 1, "artists": []}
     bid = lb_repo.create_batch(db, "weekly_jams", {"mbid": "p", "title": "t", "date": "d"}, {"tracks": [tr(1), tr(2)]})
     i1, i2 = [i["id"] for i in lb_repo.items_of_batch(db, bid)]
@@ -121,8 +121,9 @@ def test_todo_counts_everything_waiting_for_the_user(api):
             c.execute("INSERT INTO local_files(nd_song_id, library, indexed_at) VALUES(?,?,'2026-11-22T00:00:00')", (sid, lib))
     lb_repo.add_dup_suspects(db, i2, [("m-main", "near", 1.0), ("m-gone", "near", 1.0)])
     api.app.kv.set("lb.love_unresolved", {"at": "t", "items": [{"id": "s1"}, {"id": "s2"}, {"id": "s3"}]})
-    assert api.get("/api/lb/todo").json() == {"multiple": 1, "dup": 1, "love_unresolved": 3, "total": 5,
-                                              "multiple_batch": {"id": bid, "type": "weekly_jams"}, "dup_batch": {"id": bid, "type": "weekly_jams"}}
+    assert api.get("/api/lb/todo").json() == {"multiple": 1, "dup": 1, "love_unresolved": 3, "review": 0, "total": 5,
+                                              "multiple_batch": {"id": bid, "type": "weekly_jams"}, "dup_batch": {"id": bid, "type": "weekly_jams"},
+                                              "review_batch": None}
     lb_repo.dismiss_dup_suspects(db, [i2])                               # 选了「两份都留」后不再算待处理
     assert api.get("/api/lb/todo").json()["dup"] == 0
 

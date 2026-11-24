@@ -70,6 +70,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .seg.auto{display:inline-flex}
 .seg .cnt{margin-left:5px;font-size:11px;opacity:.75}
 .empty{padding:14px 10px}
+.rvcols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;max-height:56vh;overflow:auto}
+.rvcols .kvl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:2px 8px;font-size:12px;word-break:break-all}
+.rvcols .kvl b{color:var(--sub);font-weight:500}
+.rvcols img.cv{width:96px;height:96px;object-fit:cover;border:1px solid var(--line);border-radius:6px;margin:2px 6px 2px 0}
+@media(max-width:600px){.rvcols{grid-template-columns:1fr}}
 .seg.auto button{flex:none}
 .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;color:#fff}
 .b-vip{background:var(--ok)}.b-mp3{background:var(--warn)}.b-bad{background:var(--err)}
@@ -365,8 +370,19 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="group"><h3>下载渠道</h3>
     <div class="f"><span class="lb">用哪个渠道下载</span><div class="c"><select id="dlChannel"></select></div></div>
     <div class="hint" id="dlChannelDesc"></div>
-    <div class="hint">渠道负责把推荐的歌变成文件。目前只有「音乐平台」；以后可接入其他下载工具（不在本容器里的也行），选择入口就在这里。</div>
+    <div class="hint">渠道负责把推荐的歌变成文件。主渠道是「音乐平台」；下面的「网盘补充」是它的后备。</div>
     <div class="acts"><button onclick="lbSave('channel')">保存</button></div>
+  </div>
+
+  <div class="group" id="olGroup"><h3>网盘补充（OpenList）</h3>
+    <div class="f"><span class="lb">启用</span><div class="c"><label class="sw"><input type="checkbox" id="olOn"> 音乐平台没有可用的无损时，去网盘找</label></div></div>
+    <div class="f"><span class="lb">OpenList 地址</span><div class="c"><input type="text" id="olUrl" placeholder="如 http://10.0.0.6:5244"></div></div>
+    <div class="f"><span class="lb">用户名</span><div class="c"><input type="text" id="olUser" placeholder="用户名" autocomplete="off"></div></div>
+    <div class="f"><span class="lb">密码</span><div class="c"><input type="password" id="olPass" placeholder="密码" autocomplete="new-password"></div></div>
+    <div class="f"><span class="lb">音乐目录</span><div class="c"><input type="text" id="olDir" placeholder="OpenList 里的路径，如 /115/音乐"></div></div>
+    <div class="hint">只在音乐平台返回「没找到 / 只有 MP3 / 无版权」时才去网盘，只要无损（flac / ape / wv）。需要先在 OpenList 管理页「设置 → 索引」为音乐目录建好搜索索引。网盘文件的标签、封面、歌词可能夹带广告，所以<b>下载后不会直接入库</b>：先放进「待审核」，在「推荐」页点「审核」，对比文件里原有的内容和准备写入的内容（歌手/歌名/专辑来自推荐，日期、封面、歌词来自 MusicBrainz / 封面库 / 歌词库，没找到的留空），再选「用推荐的（清空原有标签）」「保留原有标签」或「放弃」。密码只保存在本机，页面不回显。</div>
+    <div id="olRes" class="sub" style="margin:0 0 6px 0"></div>
+    <div class="acts"><button class="ghost" onclick="lbTest('openlist','openlist','olRes')">测试连接</button><button onclick="lbSave('openlist')">保存</button></div>
   </div>
 
   <div class="group"><h3>下载账号</h3>
@@ -507,6 +523,21 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div id="candList"></div>
   <div class="acts"><button class="ghost" onclick="$('candDlg').close()">关闭</button></div>
 </dialog>
+<dialog id="reviewDlg" style="width:min(860px,96vw)">
+  <h2 style="font-size:15px;margin:0 0 4px">审核网盘文件的元数据</h2>
+  <div class="sub" id="rvFor" style="margin-bottom:6px"></div>
+  <div class="hint" style="margin:0 0 8px 0">网盘文件里的标签、封面、歌词可能夹带广告。左边是文件里原有的，右边是准备写入的（歌手/歌名/专辑来自推荐，日期、封面、歌词来自 MusicBrainz / 封面库 / 歌词库，没找到的留空）。文件还没有入库。</div>
+  <div class="rvcols">
+    <div><h3 class="sec">文件里原有的 <span class="sub" id="rvOrigN"></span></h3><div id="rvOrig"></div></div>
+    <div><h3 class="sec">将写入的</h3><div id="rvNew"></div></div>
+  </div>
+  <div class="acts" style="flex-wrap:wrap">
+    <button onclick="reviewDo('use_proposed')">用右边的（清空原有标签与封面）</button>
+    <button class="ghost" onclick="reviewDo('keep_original')">保留原有标签（只补缺的歌手/歌名/专辑）</button>
+    <button class="ghost" onclick="reviewDo('reject')">放弃这个版本</button>
+    <button class="ghost" onclick="$('reviewDlg').close()">稍后再说</button>
+  </div>
+</dialog>
 <dialog id="loveDlg" style="width:min(720px,96vw)">
   <h2 style="font-size:15px;margin:0 0 6px">红心同步预览</h2>
   <div class="sub" id="loveMeta" style="margin-bottom:8px"></div>
@@ -592,6 +623,8 @@ function renderLb() {
   $('lbLink').checked = LB.mode === 'navidrome'; $('outDir').value = LB.dirs.output;
   $('dlChannel').innerHTML = LB.channels.map(x => `<option value="${esc(x.key)}">${esc(x.label)}</option>`).join('');
   $('dlChannel').value = LB.channel;
+  { const o = LB.openlist; $('olOn').checked = o.enabled; $('olUrl').value = o.url; $('olUser').value = o.username; $('olDir').value = o.music_dir;
+    $('olPass').value = ''; $('olPass').placeholder = o.has_password ? '密码（已设置，留空不修改）' : '密码'; }
   $('dlChannelDesc').textContent = (LB.channels.find(x => x.key === LB.channel) || {}).desc || '';
   $('lbSource').innerHTML = LB.sources.map(x => `<option value="${esc(x.key)}">${esc(x.label)}</option>`).join('');
   $('lbSource').value = LB.source;
@@ -632,6 +665,7 @@ function lbPayload(group) {
     case 'mode': return {mode: c('lbLink') ? 'navidrome' : 'folder'};
     case 'output': return {dirs: {output: v('outDir')}};
     case 'channel': return {channel: v('dlChannel')};
+    case 'openlist': return {openlist: {enabled: c('olOn'), url: v('olUrl'), username: v('olUser'), password: v('olPass'), music_dir: v('olDir')}};
     case 'autodl': return {auto_download: c('autoDl')};
     case 'listenbrainz': return {listenbrainz: {username: v('lbUser'), token: v('lbToken')}};
     case 'navidrome': return {navidrome: {url: v('ndUrl'), user: v('ndUser'), password: v('ndPass'),
@@ -679,13 +713,13 @@ const REC_INFO = {netease_daily: ['每日推荐', '音乐平台每日推荐', '�
 let recTimer = null, ovTimer = null, lstType = 'daily', lstPin = null, lstBatchId = null, lstState = '', lstData = {}, CUR = [];
 let runOpenId = null, runAfter = 0, runText = '', runLogTimer = null;
 const ST_ZH = {PENDING: '待下载', DOWNLOADING: '下载中', LOCAL_MAIN: '主库已有', LOCAL_DISCOVERY: '试听库', NOT_FOUND: '未找到',
-  DOWNLOAD_FAILED: '下载失败', MULTIPLE_MATCH: '待选择', SKIPPED: '已跳过', PROMOTING: '转正中', PROMOTED: '已转正', EXPIRED: '已过期', DOWNLOADED: '已下载'};
+  DOWNLOAD_FAILED: '下载失败', MULTIPLE_MATCH: '待选择', SKIPPED: '已跳过', PROMOTING: '转正中', PROMOTED: '已转正', EXPIRED: '已过期', DOWNLOADED: '已下载', REVIEW: '待审核'};
 const ST_CLS = {DOWNLOADED: 'ok', LOCAL_MAIN: 'ok', LOCAL_DISCOVERY: 'ok', PROMOTED: 'ok', PROMOTING: 'run', DOWNLOADING: 'run', NOT_FOUND: 'warn',
-  MULTIPLE_MATCH: 'warn', SKIPPED: 'warn', DOWNLOAD_FAILED: 'bad'};
-const KIND_ZH = {sync: '推荐同步', promote: '红心转正', cleanup: '过期清理', reindex: '同步索引', love: '红心同步', love_preview: '红心预览', dedup: '重复歌曲处理'};
+  MULTIPLE_MATCH: 'warn', SKIPPED: 'warn', REVIEW: 'warn', DOWNLOAD_FAILED: 'bad'};
+const KIND_ZH = {sync: '推荐同步', promote: '红心转正', cleanup: '过期清理', reindex: '同步索引', love: '红心同步', love_preview: '红心预览', dedup: '重复歌曲处理', review: '网盘文件审核'};
 const RUN_ZH = {running: '运行中', done: '完成', failed: '失败', paused: '已暂停', interrupted: '被中断'};
 const RUN_CLS = {running: 'run', done: 'ok', failed: 'bad', paused: 'warn', interrupted: 'warn'};
-const REASON_ZH = {exists: '下载目录或音乐库里已有', dup_resolved: '与主库重复，已保留主库那份', variant: '库里是电台版/单曲版，建议尽快替换为原版', not_found: '音乐平台没有这首', only_mp3: '只有 MP3（库只要无损）', no_copyright: '无版权/已下架', cooldown: '冷却期内不重复搜索',
+const REASON_ZH = {rejected: '你放弃了网盘里的版本', exists: '下载目录或音乐库里已有', dup_resolved: '与主库重复，已保留主库那份', variant: '库里是电台版/单曲版，建议尽快替换为原版', not_found: '音乐平台没有这首', only_mp3: '只有 MP3（库只要无损）', no_copyright: '无版权/已下架', cooldown: '冷却期内不重复搜索',
   over_limit: '超出最大新下载数', promote_conflict: '主库已有同名文件，未转正', promote_error: '转正出错，将自动重试', expired: '试听期满已清理',
   exception: '处理出错', multiple: '本地有多个候选', download: '下载失败', api: '接口错误', invalid: '文件校验失败'};
 const STAT = {  // 统计项：[中文名, 说明（鼠标悬停显示）]
@@ -698,6 +732,10 @@ const STAT = {  // 统计项：[中文名, 说明（鼠标悬停显示）]
   failed: ['失败', '下载或提交失败，下次会重试'],
   skipped: ['已跳过', '超出「最大新下载数」，本轮不下载'],
   multiple: ['待选择', '本地有多首难以区分的候选，需要你在「推荐」里手动选择是哪一首'],
+  to_review: ['待审核', '从网盘下载、等你审核元数据的歌：在「推荐」页点「审核」对比原有标签与推荐标签后再入库'],
+  review_rewritten: ['已重写标签', '审核时选了「用推荐的」：清空原有标签与封面，只写入推荐的内容'],
+  review_kept: ['保留原标签', '审核时选了「保留原有标签」'],
+  review_rejected: ['已放弃', '审核时选了「放弃这个版本」，条目回到未找到'],
   errors: ['出错', '处理这些歌时出错，详见日志'],
   dup_suspects: ['疑似与主库重复', '试听库新下载的歌，和主库里某个文件疑似是同一首（版本/时长不同），需要你在「推荐」里选择保留哪一份'],
   dedup_replaced: ['替换主库旧文件', '用试听库这份替换了主库里的旧文件；旧文件移入了回收站，可恢复'],
@@ -741,21 +779,22 @@ async function todoRefresh() {
 }
 function renderTodo() {
   const T = TODO, card = $('todoCard');
-  if (!T || !T.total) { card.classList.add('hide'); return; }
+  if (!T || !T.total) { card.classList.add('hide'); $('todoList').innerHTML = ''; return; }
   card.classList.remove('hide');
   $('todoSum').textContent = `共 ${T.total} 项`;
   const rows = [];
   if (T.multiple) rows.push(['multiple', T.multiple, '首待选择', '本地有多首难以区分的候选，需要你指定是哪一首', '去选择']);
   if (T.dup) rows.push(['dup', T.dup, '首疑似与主库重复', '选择保留哪一份：主库那份 / 试听库这份 / 两份都留', '去处理']);
+  if (T.review) rows.push(['review', T.review, '首网盘文件待审核', '网盘文件的标签可能夹带广告：对比原有与推荐的元数据后再入库', '去审核']);
   if (T.love_unresolved) rows.push(['love', T.love_unresolved, '首红心解析不出 MBID', '没法同步到 ListenBrainz：可搜索 MusicBrainz 指定，或忽略', '去处理']);
   $('todoList').innerHTML = rows.map(([k, n, t, d, b]) => `<div class="ti"><div class="tx"><b>${n}</b>${t}<div class="sub">${d}</div></div>
     <button onclick="todoGo('${k}')">${b}</button></div>`).join('');
 }
 function todoGo(k) {
   if (k === 'love') { showUnresolved(); return; }
-  const b = k === 'multiple' ? TODO.multiple_batch : TODO.dup_batch;
+  const b = k === 'multiple' ? TODO.multiple_batch : k === 'review' ? TODO.review_batch : TODO.dup_batch;
   if (!b) { showTab('rec'); return; }
-  openList(b.type, b.id, k === 'multiple' ? 'MULTIPLE_MATCH' : 'LOCAL_DISCOVERY');   // 直达那一批，并筛到相关状态
+  openList(b.type, b.id, k === 'multiple' ? 'MULTIPLE_MATCH' : k === 'review' ? 'REVIEW' : 'LOCAL_DISCOVERY');   // 直达那一批，并筛到相关状态
 }
 
 /* ---- 推荐页：三个列表（每日熟悉 / 每周探新 / 每周熟悉；音乐平台来源时只有每日推荐），只显示今天 / 本周的歌单 ---- */
@@ -998,6 +1037,7 @@ async function listItems() {
     if (i.state === 'LOCAL_DISCOVERY') btns.push(i.keep ? `<button class="ghost sm" onclick="itemAct(${i.id},'unkeep')">取消保留</button>` : `<button class="ghost sm" onclick="itemAct(${i.id},'keep')">保留</button>`);
     if (['NOT_FOUND', 'DOWNLOAD_FAILED', 'SKIPPED'].includes(i.state) || (i.state === 'LOCAL_DISCOVERY' && ['promote_conflict', 'promote_error'].includes(i.reason_kind)))
       btns.push(`<button class="ghost sm" onclick="itemAct(${i.id},'retry')">重试</button>`);
+    if (i.state === 'REVIEW') btns.push(`<button class="sm" onclick="openReview(${i.id})">审核</button>`);
     if (i.state === 'MULTIPLE_MATCH') btns.push(`<button class="sm" onclick="openCand(${i.id})">选择</button>`);
     if (i.state === 'PENDING') btns.push(`<button class="sm" onclick="itemDownload(${i.id})">下载</button>`);
     return `<div class="rit"><div class="nm"><div><b>${esc(i.title)}</b></div><div class="sub">${esc(i.artist)}${i.album ? ' · ' + esc(i.album) : ''} · 推荐于 ${esc(i.recommended_at)}</div>
@@ -1040,6 +1080,28 @@ function openCand(id) {
   $('candList').innerHTML = i.candidates.map(c => `<div class="sched"><div class="grow"><b>${esc(c.title)}</b> <span class="sub">${esc(c.artist)} · ${esc(c.album)} · ${c.duration ? Math.floor(c.duration / 60) + ':' + String(c.duration % 60).padStart(2, '0') : '时长未知'}</span>
     <div class="sub">${c.library === 'main' ? '主库' : '试听库'}</div></div><button class="sm" onclick="chooseCand(${id}, '${esc(c.nd_song_id)}')">就是这首</button></div>`).join('') || '<div class="sub">没有候选</div>';
   $('candDlg').showModal();
+}
+/* ---- 审核网盘文件的元数据 ---- */
+let rvItem = null;
+const rvRows = (tags, empty) => tags.length ? `<div class="kvl">${tags.map(([k, v]) => `<b>${esc(k)}</b><span>${esc(v)}</span>`).join('')}</div>` : `<div class="sub">${empty}</div>`;
+async function openReview(id) {
+  let r; try { r = await api('/api/lb/review?item=' + id); } catch (e) { toast(e.message); return; }
+  rvItem = id;
+  $('rvFor').textContent = `${r.item.artist} - ${r.item.title}　·　文件 ${r.held_name}`;
+  const o = r.original, p = r.proposed;
+  $('rvOrigN').textContent = `${o.tags.length} 项标签 · ${o.pictures.length} 张图片`;
+  $('rvOrig').innerHTML = (o.pictures.map(x => x.thumb ? `<img class="cv" src="${x.thumb}" title="${esc(x.mime)} ${(x.size / 1024).toFixed(0)} KB">` : `<span class="sub">图片 ${(x.size / 1024).toFixed(0)} KB（无法预览）</span>`).join('')) +
+    rvRows(o.tags, '文件里没有任何标签');
+  const nw = [['歌手', (p.artists || [p.artist]).join(', ')], ['歌名', p.title], ['专辑', p.album], ['发行日期', p.date], ['录音 MBID', p.recording_mbid], ['发行 MBID', p.release_mbid],
+              ['歌词', p.lyric ? p.lyric.slice(0, 300) + (p.lyric.length > 300 ? `…（共 ${p.lyric.length} 字）` : '') : '']].filter(x => x[1]);
+  $('rvNew').innerHTML = (p.cover_thumb ? `<img class="cv" src="${p.cover_thumb}" title="封面">` : `<div class="sub">没有找到封面（将不放封面）</div>`) + rvRows(nw, '没有可写入的内容');
+  $('reviewDlg').showModal();
+}
+const REVIEW_MSG = {use_proposed: '已按推荐的元数据入库', keep_original: '已保留原有标签入库', reject: '已放弃这个版本'};
+async function reviewDo(choice) {
+  if (choice === 'reject' && !(await confirmBox('放弃这个版本', '会删除暂存的网盘文件，这首歌回到「未找到」（有冷却期，之后会再尝试）。', '放弃'))) return;
+  $('reviewDlg').close();
+  await startSyncHere({kind: 'review', item_id: rvItem, choice}, REVIEW_MSG[choice] + '（处理中）');
 }
 async function chooseCand(id, songId) { $('candDlg').close(); await itemAct(id, 'choose', songId); }
 

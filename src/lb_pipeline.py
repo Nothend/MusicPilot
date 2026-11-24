@@ -415,12 +415,19 @@ def _download_or_defer(d: SyncDeps, it, target: Target, cap: int, new_ok: int, w
     res = d.adapter.download_song(it["artist"], it["title"], s["dirs"]["output" if folder else "discovery"],
                                   artists=[a for a in json.loads(it["artists_json"] or "[]") if a],
                                   album=it["album"], duration_ms=it["duration_ms"],
-                                  **({"platform_id": int(psid)} if psid else {}))
+                                  **({"platform_id": int(psid)} if psid else {}),
+                                  **({"recording_mbid": it["recording_mbid"]} if it["recording_mbid"] else {}))
     lb_repo.record_download(db, it["id"], attempt, ok=res.success, platform_id=res.platform_id, error_kind=res.error_kind,
                             error=res.error, path=res.path or "", quality=res.quality, file_type=res.file_type, now=d.now())
     # 每首搜索之间留足间隔；按平台歌曲 id 直接下载的没有搜索，只按用户设置的请求间隔
     d.sleep(d.request_delay if psid else max(d.request_delay, SEARCH_MIN_INTERVAL))
 
+    if res.success and res.review:               # 网盘来的文件：标签不可信，先放进 .review/，等人工对比后再入库
+        lb_repo.set_state(db, it["id"], ST.REVIEW, note="网盘文件等待审核元数据", now=d.now(), local_path=res.path,
+                          reason_kind="", reason="")
+        lb_repo.save_review(db, it["id"], res.path, res.review.get("cover_path", ""), res.review, d.now())
+        h.add("to_review"); h.log(f"已下载，等你审核元数据：{who}（在「推荐」页点「审核」）")
+        return 1
     if res.success and folder:
         lb_repo.set_state(db, it["id"], ST.DOWNLOADED, note="下载成功" + ("（复用已存在文件）" if res.reused else ""),
                           now=d.now(), local_path=res.path, reason_kind="", reason="")

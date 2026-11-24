@@ -4,6 +4,7 @@
 """
 
 import json
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -82,6 +83,7 @@ def todo(db: Database, kv, settings: Dict[str, Any]) -> Dict[str, Any]:
 
     multiple    本地有多个难以区分的候选，等你选择是哪一首
     dup         试听库歌曲与主库文件疑似重复，等你选择保留哪一份（只算尚未处理、主库文件还在的）
+    review      网盘下载的文件，等你对比原有标签与推荐标签后决定入库方式
     love_unresolved  红心同步解析不出可信 MBID 的歌（最近一次同步/预览的快照）
     """
     with db.lock:
@@ -95,10 +97,27 @@ def todo(db: Database, kv, settings: Dict[str, Any]) -> Dict[str, Any]:
             "SELECT b.id, b.type FROM recommendation_items i JOIN recommendation_batches b ON b.id=i.batch_id "
             "WHERE i.state=? ORDER BY b.id DESC LIMIT 1", (ST.MULTIPLE_MATCH,)).fetchone()
     unresolved = len((kv.get("lb.love_unresolved") or {}).get("items", []))
-    return {"multiple": multiple, "dup": dup, "love_unresolved": unresolved,
-            "total": multiple + dup + unresolved,
+    with db.lock:
+        review = db.conn.execute("SELECT COUNT(*) FROM recommendation_items WHERE state=?", (ST.REVIEW,)).fetchone()[0]
+        rev_b = db.conn.execute("SELECT b.id, b.type FROM recommendation_items i JOIN recommendation_batches b ON b.id=i.batch_id "
+                                "WHERE i.state=? ORDER BY b.id DESC LIMIT 1", (ST.REVIEW,)).fetchone()
+    return {"multiple": multiple, "dup": dup, "love_unresolved": unresolved, "review": review,
+            "review_batch": dict(rev_b) if rev_b else None,
+            "total": multiple + dup + unresolved + review,
             # 点「去处理」时直达最新的那一批（没有则为 None）
             "multiple_batch": dict(mul_b) if mul_b else None, "dup_batch": dict(dup_b) if dup_b else None}
+
+
+def review_detail(db: Database, item_id: int) -> Dict[str, Any]:
+    """待审核的网盘文件：原有标签/封面 与 推荐写入的内容对照（页面「审核」对话框用）。"""
+    it = lb_repo.get_item(db, item_id)
+    rv = lb_repo.get_review(db, item_id)
+    if it is None or rv is None:
+        raise ValueError("这首歌没有待审核的内容")
+    data = json.loads(rv["data_json"])
+    return {"item": {"id": item_id, "artist": it["artist"], "title": it["title"], "album": it["album"], "state": it["state"]},
+            "held_name": Path(rv["held_path"]).name, "exists": Path(rv["held_path"]).is_file(),
+            "original": data["original"], "proposed": data["proposed"]}
 
 
 def _run_row(r) -> Optional[Dict[str, Any]]:

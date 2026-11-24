@@ -85,6 +85,21 @@ class F:
     def __init__(self, i, l): self.nd_song_id, self.library = i, l
 lb_repo.save_candidates(db, item, [F('c1', 'main'), F('c2', 'discovery')])
 lb_repo.set_state(db, item, ST.MULTIPLE_MATCH, reason_kind='multiple', reason='x')
+# 一个待审核的网盘文件：标签里夹带广告（注释/歌词/网址/封面），页面「审核」对比后选择
+from audio import make_flac
+from mutagen.flac import FLAC, Picture
+import lb_review
+rv_bid = lb_repo.create_batch(db, 'weekly_exploration', {'mbid': 'plR', 'title': 't', 'date': '2026-09-08T12:00:00+00:00'},
+    {'tracks': [{'recording_mbid': 'mbR1', 'artist': '网盘歌手', 'title': '网盘歌', 'album': '推荐专辑', 'duration_ms': 200000, 'artists': []}]})
+rv_item = lb_repo.items_of_batch(db, rv_bid)[0]['id']
+held = make_flac(tmp / 'discovery' / '.review' / '网盘歌手 - 网盘歌.flac', '网盘歌手', '网盘歌', seconds=200,
+                 extra={'comment': ['加微信 xxx 领福利'], 'lyrics': ['广告歌词'], 'website': ['http://ad.example']})
+_f = FLAC(str(held)); _p = Picture(); _p.type, _p.mime, _p.desc, _p.data = 3, 'image/jpeg', 'ad', b'\xff\xd8\xff\xe0' + b'x' * 30
+_f.add_picture(_p); _f.save()
+lb_repo.set_state(db, rv_item, ST.DOWNLOADING); lb_repo.set_state(db, rv_item, ST.REVIEW, local_path=str(held))
+lb_repo.save_review(db, rv_item, str(held), '', {'original': lb_review.describe(held), 'cover_path': '',
+    'proposed': {'artist': '网盘歌手', 'artists': ['网盘歌手'], 'title': '网盘歌', 'album': '推荐专辑', 'date': '2003-07-31',
+                 'lyric': '[00:01.00]真歌词', 'recording_mbid': 'mbR1', 'release_mbid': '', 'has_cover': False}})
 app.tm.recover()
 
 server = web_server.serve(os.environ.get('UI_HOST', '127.0.0.1'), int(os.environ.get('UI_PORT', '0')), app)

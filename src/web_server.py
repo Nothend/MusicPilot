@@ -363,6 +363,8 @@ class App:
             return lb_checks.check_dirs(s)
         if target == "output":
             return lb_checks.check_output_dir(s)
+        if target == "openlist":
+            return lb_checks.test_openlist(s)
         raise ValueError("未知的测试项")
 
     # ------------------------------------------------------------ 推荐联动：任务与查询
@@ -377,6 +379,11 @@ class App:
             try:
                 params = {"item_id": int(body.get("item_id")), "choice": str(body.get("choice", "")),
                           "main_id": str(body.get("main_id") or "")}
+            except (TypeError, ValueError):
+                raise ValueError("缺少条目编号")
+        if kind == "review":
+            try:
+                params = {"item_id": int(body.get("item_id")), "choice": str(body.get("choice", ""))}
             except (TypeError, ValueError):
                 raise ValueError("缺少条目编号")
         if kind == "sync":                       # download：省略 = 按设置「获取推荐后自动下载」；true = 现在就下载；item_id = 只处理这一首
@@ -559,6 +566,11 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     raise ValueError("缺少批次编号")
                 return lb_queries.items(app.store.db, batch, q("state"))
+            if path == "/api/lb/review":
+                try:
+                    return lb_queries.review_detail(app.store.db, int(q("item")))
+                except ValueError as e:
+                    raise ApiError(404, str(e) or "条目不存在")
             if path == "/api/lb/runs":
                 return {"runs": lb_queries.runs(app.store.db, 30), "current": app.tm.current()}
             if path == "/api/lb/run":

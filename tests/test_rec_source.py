@@ -197,7 +197,7 @@ def test_listenbrainz_tracks_have_no_platform_id_and_keep_the_search_pacing(tmp_
     with env.tm.run("sync", "manual") as h:
         lb_pipeline.run_sync(SyncDeps(env.db, env.settings, env.lb, env.nd, env.adapter, h, request_delay=0.5,
                                       sleep=sleeps.append, now=lambda: env.now))
-    assert env.adapter.kws == [{"artists": ["A"], "album": "Al", "duration_ms": 200000}]   # 不带 platform_id
+    assert env.adapter.kws == [{"artists": ["A"], "album": "Al", "duration_ms": 200000, "recording_mbid": "mb-1"}]   # 不带 platform_id；带 LB 的录音 MBID（网盘渠道补标签用）
     assert max(sleeps) == lb_pipeline.SEARCH_MIN_INTERVAL                                  # 搜索类仍留足 2 秒
 
 

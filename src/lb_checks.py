@@ -59,6 +59,27 @@ def test_navidrome(s: Dict[str, Any], client: NavidromeClient = None) -> Dict[st
             "warnings": notes}
 
 
+def test_openlist(s: Dict[str, Any], client=None) -> Dict[str, Any]:
+    """登录 OpenList、列一下音乐目录，并试一次搜索来确认已经建好了索引（搜索只读）。"""
+    from openlist_client import OpenListClient, OpenListError
+    o = s["openlist"]
+    if not o["url"] or not o["username"] or not o["password"] or not o["music_dir"]:
+        raise ValueError("请先填写 OpenList 地址、用户名、密码和音乐目录")
+    client = client or OpenListClient(o["url"], o["username"], o["password"])
+    try:
+        client.login()
+        entries = client.list_dir(o["music_dir"], per_page=5)
+    except OpenListError as e:
+        raise ValueError(str(e))
+    notes = []
+    try:
+        client.search(o["music_dir"], "a", per_page=1)
+    except OpenListError as e:
+        notes.append(str(e) if e.kind == "index" else f"搜索试用失败：{e}")
+    msg = f"连接成功，音乐目录可访问（前 {len(entries)} 项已读到）"
+    return {"message": msg + ("；注意：" + "；".join(notes) if notes else "；搜索索引可用"), "warnings": notes}
+
+
 def _mount_point(path: Path, mountinfo: Optional[str] = None) -> Optional[str]:
     """path 所在的挂载点（读 /proc/self/mountinfo，取最长的前缀匹配）；读不到返回 None。
 

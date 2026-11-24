@@ -23,7 +23,7 @@ class DiskAdapter:
     def __init__(self):
         self.calls = []
 
-    def download_song(self, artist, title, output_dir, *, artists=None, album="", duration_ms=None):
+    def download_song(self, artist, title, output_dir, *, artists=None, album="", duration_ms=None, **kw):
         self.calls.append(title)
         n = len(self.calls)
         p = make_flac(Path(output_dir) / f"{artist} - {title}.flac", artist, title,

@@ -376,3 +376,21 @@ def delete_dup_suspects(db: Database, item_ids: Iterable[int]) -> None:
     with db.transaction() as conn:
         for i in item_ids:
             conn.execute("DELETE FROM dup_suspects WHERE item_id=?", (i,))
+
+
+# ---------------------------------------------------------------- 网盘文件的人工审核（REVIEW 状态）
+def save_review(db: Database, item_id: int, held_path: str, cover_path: str, data: Dict[str, Any],
+                now: Optional[datetime] = None) -> None:
+    with db.transaction() as conn:
+        conn.execute("INSERT OR REPLACE INTO review_holds(item_id, held_path, cover_path, data_json, created_at) VALUES(?,?,?,?,?)",
+                     (item_id, held_path, cover_path or "", json.dumps(data, ensure_ascii=False), now_iso(now)))
+
+
+def get_review(db: Database, item_id: int):
+    with db.lock:
+        return db.conn.execute("SELECT * FROM review_holds WHERE item_id=?", (item_id,)).fetchone()
+
+
+def delete_review(db: Database, item_id: int) -> None:
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM review_holds WHERE item_id=?", (item_id,))

@@ -129,6 +129,27 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('选了候选后筛选「待选择」的列表空了', txt('lstItems').includes('没有符合条件')); w.setLstState(''); await sleep(700);
   check('选择试听库候选后该条变为「试听库」且不再有选择按钮', txt('lstItems').includes('试听库') && ![...d.querySelectorAll('#lstItems button')].some(b => b.textContent === '选择'), txt('lstItems').slice(0, 80));
 
+  // ---- 审核网盘文件的元数据（标签里夹带广告）
+  await w.eval("todoRefresh()"); await sleep(500);
+  check('「需要你处理」里有「网盘文件待审核」', txt('todoList').includes('待审核') && txt('todoList').includes('去审核'), txt('todoList'));
+  await w.eval("todoGo('review')"); await sleep(1200);
+  const rvBtn = () => [...d.querySelectorAll('#lstItems button')].find(b => b.textContent === '审核');
+  check('点「去审核」直达那一批，待审核的歌显示状态与「审核」按钮', !!rvBtn() && txt('lstItems').includes('待审核'), txt('lstItems').slice(0, 60));
+  rvBtn().click(); await sleep(900);
+  check('审核对话框：左边列出文件里原有的标签（含广告）和图片数', $('reviewDlg').hasAttribute('open') && txt('rvOrig').includes('加微信') && txt('rvOrig').includes('ad.example') && txt('rvOrigN').includes('1 张图片'), txt('rvOrigN'));
+  check('审核对话框：右边是将写入的内容，没有封面时明说', txt('rvNew').includes('推荐专辑') && txt('rvNew').includes('真歌词') && txt('rvNew').includes('没有找到封面') && !txt('rvNew').includes('加微信'), txt('rvNew').slice(0, 80));
+  check('三个选择按钮 + 稍后再说', ['用右边的', '保留原有标签', '放弃这个版本', '稍后再说'].every(t => [...$('reviewDlg').querySelectorAll('button')].some(b => b.textContent.includes(t))));
+  const runsRv0 = await nRuns();
+  w.eval("reviewDo('reject')"); await sleep(300);
+  check('选「放弃」先弹确认框', $('recConfirm').hasAttribute('open') && txt('rcBody').includes('删除暂存'), txt('rcBody'));
+  $('recConfirm').close('no'); await sleep(500);
+  const rvBatch = async () => (await (await fetch(BASE + '/api/lb/batches?type=weekly_exploration')).json()).batches.find(b => b.date === '2026-09-08').id;
+  const stOf = async () => (await (await fetch(BASE + '/api/lb/items?batch=' + await rvBatch())).json()).items[0];
+  check('取消后没有产生任务，条目仍待审核', (await nRuns()) === runsRv0 && (await stOf()).state === 'REVIEW');
+  await w.eval("reviewDo('use_proposed')"); await sleep(4500);
+  const afterRv = await stOf();
+  check('选「用右边的」后条目入库（试听库），不再待审核', afterRv.state === 'LOCAL_DISCOVERY' && !!afterRv.path, JSON.stringify([afterRv.state, afterRv.path]));
+  check('入库后「需要你处理」里不再有待审核', !txt('todoList').includes('网盘文件待审核'));
   // ---- 任务
   d.querySelector('#nav button[data-tab="jobs"]').click(); await sleep(300);
   d.querySelector('#jKind button[data-v="lb"]').click(); await sleep(900);
@@ -226,6 +247,17 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   // ---- 联动开关：默认（全新安装）关闭；打开才出现 Navidrome 相关的一切；切换即保存，打开前要确认
   check('联动已开（本测试数据按联动造的）：Navidrome / 目录 / 试听库 / 红心同步卡片可见，下载目录与音乐库去重卡片隐藏', $('lbLink').checked && vis($('cLbMode')) && vis($('cLbNd')) && vis($('cLbDisc')) && vis($('cLbLove')) && !vis($('cLbOut')) && !vis($('cLbDedupe')));
   check('下载渠道选择在「下载渠道」组里，目前只有音乐平台', $('sgAcct').contains($('dlChannel')) && [...$('dlChannel').options].map(o => o.value).join(',') === 'platform' && txt('dlChannelDesc').length > 0);
+  check('「网盘补充（OpenList）」在「下载渠道」组里：启用 / 地址 / 用户名 / 密码 / 音乐目录', ['olOn', 'olUrl', 'olUser', 'olPass', 'olDir'].every(i => $('sgAcct').contains($(i))) && txt('olGroup').includes('测试连接'));
+  $('olUrl').value = 'http://127.0.0.1:9'; $('olUser').value = 'u'; $('olPass').value = 'secretpw'; $('olDir').value = '音乐/';
+  await w.eval("lbTest('openlist','openlist','olRes')"); await sleep(1500);
+  check('测试连接连不上时给出可读提示（页面冒烟环境不连外网）', txt('olRes').includes('连不上') || txt('olRes').includes('失败'), txt('olRes'));
+  await w.eval("lbSave('openlist')"); await sleep(700);
+  { const o = (await (await realFetch('/api/lb/settings')).json()).openlist;
+    check('保存后目录被规范成 /音乐，密码不回显只给 has_password', o.url === 'http://127.0.0.1:9' && o.music_dir === '/音乐' && o.has_password === true && !('password' in o) && $('olPass').value === '' && $('olPass').placeholder.includes('已设置'), JSON.stringify(o)); }
+  $('olOn').checked = true; await w.eval("lbSave('openlist')"); await sleep(600);
+  check('启用后保存成功', (await (await realFetch('/api/lb/settings')).json()).openlist.enabled === true);
+  $('olOn').checked = false; await w.eval("lbSave('openlist')"); await sleep(600);
+  check('关闭后保存成功（测试数据复原）', (await (await realFetch('/api/lb/settings')).json()).openlist.enabled === false);
   $('lbLink').checked = false; $('lbLink').dispatchEvent(new w.Event('change')); await sleep(700);        // 关闭联动：不需要确认，立即保存
   check('关闭联动：隐藏 Navidrome / 目录 / 试听库 / 红心同步 / 联动专属定时与歌单名，出现下载目录与音乐库去重', ['cLbNd', 'cLbDir', 'cLbDisc', 'cLbLove'].every(i => !vis($(i))) && !vis($('sPromote').closest('.f')) && !vis($('sClean').closest('.f')) && !vis($('sLove').closest('.f')) && !vis($('pn-daily').closest('.f')) && vis($('cLbMode')) && vis($('cLbOut')) && vis($('cLbDedupe')));
   $('outDir').value = '/tmp/ui_out_dir'; await w.eval("lbSave('output')"); await sleep(500);

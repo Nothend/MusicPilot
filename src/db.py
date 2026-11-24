@@ -307,7 +307,17 @@ def _v11(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE tracks ADD COLUMN platform_song_id TEXT NOT NULL DEFAULT ''")
 
 
-MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8, _v9, _v10, _v11]
+def _v12(conn: sqlite3.Connection) -> None:
+    """v12：网盘文件的元数据人工审核——条目处于 REVIEW 状态时，暂存文件的位置与「原有标签 / 推荐标签」的对照数据。"""
+    conn.execute("""CREATE TABLE IF NOT EXISTS review_holds (
+        item_id INTEGER PRIMARY KEY REFERENCES recommendation_items(id),
+        held_path TEXT NOT NULL,
+        cover_path TEXT NOT NULL DEFAULT '',
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL)""")
+
+
+MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8, _v9, _v10, _v11, _v12]
 
 
 class DatabaseVersionError(RuntimeError):

@@ -46,6 +46,8 @@ class AdapterResult:
     reused: bool = False          # 目标文件已存在且校验通过（上次中断前已落盘），直接复用
     enriched: Optional[List[str]] = None   # 实际修改了文件的元数据补全器名（见 lb_enrich.py）
     tried: int = 0                # 尝试过的候选数
+    review: Optional[dict] = None          # 网盘渠道：文件放在 .review/ 等人工审核，这里是对照数据（lb_review.py）；有它时 path 是暂存位置
+    candidate_id: Optional[int] = None   # 平台有这首歌但没法下（只有 MP3/无版权）时，最先尝试的候选 id（网盘渠道用它去取封面/歌词/年份）
 
 
 def read_tags(path: Path) -> Tuple[str, str, float]:
@@ -97,7 +99,7 @@ class PlatformAdapter:
 
     def download_song(self, artist: str, title: str, output_dir, *, artists: Optional[List[str]] = None,
                       album: str = "", duration_ms: Optional[int] = None,
-                      platform_id: Optional[int] = None) -> AdapterResult:
+                      platform_id: Optional[int] = None, recording_mbid: str = "") -> AdapterResult:
         """platform_id：推荐来源已经给出音乐平台歌曲 id（如平台自己的每日推荐）时直接按它下载，不搜索、不过滤。"""
         out_dir = Path(output_dir)
         target = Target(artist=artist, title=title, artists=list(artists or []),
@@ -133,8 +135,9 @@ class PlatformAdapter:
         if info is None:
             if only_mp3:
                 return AdapterResult(False, error="只有 MP3 或试听片段，库只要无损",
-                                     error_kind="only_mp3", tried=tried)
-            return AdapterResult(False, error=unavailable or "候选均不可下载", error_kind="no_copyright", tried=tried)
+                                     error_kind="only_mp3", tried=tried, candidate_id=ranked[0].id)
+            return AdapterResult(False, error=unavailable or "候选均不可下载", error_kind="no_copyright", tried=tried,
+                                 candidate_id=ranked[0].id)
 
         # 3) 下载到暂存目录（现有下载器：.part 原子写入 + 大小校验 + 写标签）
         staging = out_dir / STAGING_DIRNAME

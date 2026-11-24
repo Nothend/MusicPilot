@@ -53,6 +53,7 @@ DEFAULT_PLAYLIST_NAMES = {"daily": "LB Daily Jams {date}", "weekly_exploration":
                           "weekly_jams": "LB Weekly Jams {date}", NETEASE_DAILY: "每日推荐 {date}"}
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 STAGING_DIRNAME = ".staging"   # discovery 内的下载暂存目录（Navidrome 忽略以 . 开头的目录）
+REVIEW_DIRNAME = ".review"     # 目标目录内：网盘文件等待人工审核元数据时的存放处（lb_review.py）
 TRASH_DIRNAME = ".trash"       # discovery 内的软删除目录
 
 
@@ -65,6 +66,8 @@ def defaults() -> Dict[str, Any]:
         "channel": DEFAULT_CHANNEL, # 下载渠道（CHANNELS 的 key）
         "source": DEFAULT_SOURCE,   # 推荐来源（SOURCES 的 key）：决定「推荐」页显示哪些列表、定时同步哪些
         "listenbrainz": {"username": "", "token": ""},
+        # 网盘下载渠道（OpenList）：启用后作为音乐平台的补充——平台没有可用无损时才去网盘找（见 openlist_channel.py）
+        "openlist": {"enabled": False, "url": "", "username": "", "password": "", "music_dir": ""},
         "navidrome": {"url": "", "user": "", "password": "",
                       "main_folder_id": None, "discovery_folder_id": None},
         # 容器内路径（只写容器路径，不写宿主机路径）
@@ -238,6 +241,28 @@ def apply(current: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
         if p.get("token"):  # 留空 = 不修改
             s["listenbrainz"]["token"] = _str(p["token"], "ListenBrainz Token", 128)
 
+    p = payload.get("openlist")
+    if isinstance(p, dict):
+        o = s["openlist"]
+        if "enabled" in p:
+            o["enabled"] = _bool(p["enabled"])
+        if "url" in p:
+            url = _str(p["url"], "OpenList 地址", 200).rstrip("/")
+            if url and not url.lower().startswith(("http://", "https://")):
+                raise ValueError("OpenList 地址须以 http:// 或 https:// 开头")
+            o["url"] = url
+        if "username" in p:
+            o["username"] = _str(p["username"], "OpenList 用户名", 64)
+        if p.get("password"):  # 留空 = 不修改
+            o["password"] = _str(p["password"], "OpenList 密码", 128)
+        if "music_dir" in p:
+            d = _str(p["music_dir"], "网盘音乐目录", 300)
+            if d and ".." in d.replace("\\", "/").split("/"):
+                raise ValueError("网盘音乐目录不能含有 ..")
+            o["music_dir"] = ("/" + d.strip("/")) if d.strip("/") else ""
+        if o["enabled"] and not (o["url"] and o["music_dir"]):
+            raise ValueError("启用网盘渠道前请先填写 OpenList 地址和音乐目录")
+
     p = payload.get("navidrome")
     if isinstance(p, dict):
         n = s["navidrome"]
@@ -333,6 +358,9 @@ def view(s: Dict[str, Any], tz: str) -> Dict[str, Any]:
     """对外视图：密码/Token 只给 has_xxx，不回显。"""
     v = copy.deepcopy(s)
     v["listenbrainz"] = {"username": s["listenbrainz"]["username"], "has_token": bool(s["listenbrainz"]["token"])}
+    o = s["openlist"]
+    v["openlist"] = {"enabled": o["enabled"], "url": o["url"], "username": o["username"], "has_password": bool(o["password"]),
+                     "music_dir": o["music_dir"]}
     n = s["navidrome"]
     v["navidrome"] = {"url": n["url"], "user": n["user"], "has_password": bool(n["password"]),
                       "main_folder_id": n["main_folder_id"], "discovery_folder_id": n["discovery_folder_id"]}
