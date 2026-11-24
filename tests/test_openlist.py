@@ -429,3 +429,28 @@ def test_wrap_uses_external_sources():
     s = lb_defaults(); s["openlist"].update(enabled=True, url="http://x", username="u", password="p", music_dir="/音乐")
     w = oc.wrap_with_openlist(SimpleNamespace(downloader=None, quality="lossless", request_delay=0), s)
     assert isinstance(w.secondary.external, meta_sources.ExternalMeta)
+
+
+# ---------------------------------------------------------------- 繁简体：OpenList 索引按字面匹配，要原文/简体/繁体各搜一遍
+def test_script_variants():
+    assert oc.script_variants("羅大佑 亞細亞的孤兒") == ["羅大佑 亞細亞的孤兒", "罗大佑 亚细亚的孤儿"]
+    assert oc.script_variants("罗大佑 亚细亚的孤儿") == ["罗大佑 亚细亚的孤儿", "羅大佑 亞細亞的孤兒"]
+    assert oc.script_variants("Adele Hello") == ["Adele Hello"]
+
+
+def test_traditional_recommendation_finds_a_simplified_file_name(client_for, tmp_path):
+    a, s = adapter(client_for, tmp_path, {"/音乐/罗大佑/罗大佑 - 亚细亚的孤儿.flac": flac_bytes(tmp_path)})
+    r = a.download_song("羅大佑", "亞細亞的孤兒", tmp_path / "o", artists=["羅大佑"], duration_ms=200000)       # 推荐里是繁体
+    assert r.success and r.review, r.error
+    assert [c[1]["keywords"] for c in s.calls if c[0] == "/api/fs/search"][:2] == ["羅大佑 亞細亞的孤兒", "罗大佑 亚细亚的孤儿"]
+
+
+def test_simplified_recommendation_finds_a_traditional_file_name(client_for, tmp_path):
+    a, _ = adapter(client_for, tmp_path, {"/音乐/羅大佑/羅大佑 - 亞細亞的孤兒.flac": flac_bytes(tmp_path)})
+    assert a.download_song("罗大佑", "亚细亚的孤儿", tmp_path / "o", artists=["罗大佑"], duration_ms=200000).success
+
+
+def test_results_from_all_script_variants_are_merged_without_duplicates(client_for, tmp_path):
+    a, s = adapter(client_for, tmp_path, {"/音乐/A/罗大佑 - 亚细亚的孤儿.flac": flac_bytes(tmp_path), "/音乐/B/羅大佑 - 亞細亞的孤兒.flac": flac_bytes(tmp_path)})
+    r = a.download_song("羅大佑", "亞細亞的孤兒", tmp_path / "o")
+    assert r.success and r.tried == 1                                                       # 两种写法的文件都搜到了，选其一即可

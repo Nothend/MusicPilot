@@ -43,6 +43,23 @@ MAX_DURATION_DIFF = 20.0        # 下载后文件时长与推荐时长相差超�
 _TRACKNO = re.compile(r"^\s*\(?\d{1,3}\)?\s*[.\-_、)\s]\s*")
 
 
+_S2T = None
+
+
+def script_variants(text: str) -> List[str]:
+    """同一段文字的 原文 / 简体 / 繁体 写法（去重，原文在前）。"""
+    global _S2T
+    from matcher import _t2s
+    if _S2T is None:
+        from opencc import OpenCC
+        _S2T = OpenCC("s2t")
+    out: List[str] = []
+    for v in (text, _t2s(text), _S2T.convert(text)):
+        if v and v not in out:
+            out.append(v)
+    return out
+
+
 def read_length(path: Path) -> float:
     f = mutagen.File(str(path))
     if f is None:
@@ -204,18 +221,20 @@ class OpenListAdapter:
 
     # ------------------------------------------------------------ 内部
     def _search(self, target: Target) -> List[Dict[str, Any]]:
+        """按「歌手 歌名」搜索；没结果再只用歌名。OpenList 的索引按字面匹配，不认繁简体，
+        所以每个关键词都用 原文 / 简体 / 繁体 各搜一遍（网盘里的文件名可能是任一种），结果合并后交给 matcher（它会折叠繁简）。"""
         first = (target.artists[0] if target.artists else target.artist) or ""
         seen, out = set(), []
-        for kw in (f"{first} {target.title}".strip(), target.title):
-            if kw != target.title and not first:
-                continue
-            for it in self.client.search(self.music_dir, kw):
-                if it["path"] not in seen:
-                    seen.add(it["path"])
-                    out.append(it)
+        tries = ([f"{first} {target.title}".strip()] if first else []) + [target.title]
+        for kw in tries:
+            for q in script_variants(kw):
+                for it in self.client.search(self.music_dir, q):
+                    if it["path"] not in seen:
+                        seen.add(it["path"])
+                        out.append(it)
+                self._sleep(self.request_delay)
             if out:
                 break
-            self._sleep(self.request_delay)
         return out
 
     def _rank(self, target: Target, album: str, files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
