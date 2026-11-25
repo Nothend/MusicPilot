@@ -502,10 +502,11 @@ def test_library_has_radio_edit_gets_replace_hint(env):
 
 
 def test_hard_version_in_library_still_downloads_original(env):
-    env.nd.main = [ndsong("m1", "A", "Song 1 (Live)", dur=200)]
+    """Remix/伴奏等「硬版本」≠ 原版：原版照常下载（只有 Live 例外：见 test_live_variant_*，会让用户判断）。"""
+    env.nd.main = [ndsong("m1", "A", "Song 1 (Remix)", dur=200)]
     env.lb.add("weekly_jams", "pl-1", [lbtrack(1)])
     env.sync()
-    assert env.adapter.calls == ["Song 1"]            # Live ≠ 原版：原版照常下载
+    assert env.adapter.calls == ["Song 1"]
 
 
 def test_custom_playlist_name_is_used_and_old_playlist_is_replaced(env):
@@ -530,3 +531,58 @@ def test_sync_applies_pending_playlist_renames_before_anything_else(env):
     env.sync()
     assert env.nd.renamed == [("pX", "LB Daily Jams 2026-11-23")]
     assert lb_repo.pending_renames(env.db) == []
+
+
+# ---------------------------------------------------------------- 只差 Live 标记
+def test_live_variant_with_close_duration_counts_as_existing(env):
+    env.nd.main = [ndsong("a", "A", "Song 1 (Live)", dur=202)]
+    env.lb.add("weekly_jams", "pl", [lbtrack(1, dur=200000)])
+    env.sync()
+    assert env.states() == {"Song 1": ST.LOCAL_MAIN} and env.adapter.calls == []
+
+
+def _live_env(env, nd_dur=207):
+    env.nd.main = [ndsong("a", "A", "Song 1 (Live)", dur=nd_dur)]
+    env.lb.add("weekly_jams", "pl", [lbtrack(1, dur=200000)])
+    env.sync()
+
+
+def test_live_variant_far_duration_waits_for_user_and_does_not_download(env):
+    _live_env(env)
+    it = env.items()["Song 1"]
+    assert it["state"] == ST.MULTIPLE_MATCH and it["reason_kind"] == "live_ambiguous" and env.adapter.calls == []
+    env.sync()                                                  # 再同步仍在等，不下载
+    assert env.states() == {"Song 1": ST.MULTIPLE_MATCH} and env.adapter.calls == []
+
+
+def test_live_variant_user_says_same_is_remembered_for_next_batch(env):
+    import lb_queries
+    _live_env(env)
+    lb_queries.item_action(env.db, env.items()["Song 1"]["id"], "choose", "a")
+    assert env.states() == {"Song 1": ST.LOCAL_MAIN}
+    env.now = T0 + timedelta(days=1)
+    env.lb.add("daily", "pl2", [lbtrack(1, dur=200000)])
+    env.sync()
+    assert env.states(2) == {"Song 1": ST.LOCAL_MAIN} and env.adapter.calls == []
+
+
+def test_live_variant_user_says_not_same_downloads_and_never_asks_again(env):
+    import lb_queries
+    _live_env(env)
+    lb_queries.item_action(env.db, env.items()["Song 1"]["id"], "not_same")
+    assert env.states() == {"Song 1": ST.PENDING}
+    env.sync()
+    assert env.states()["Song 1"] != ST.MULTIPLE_MATCH and len(env.adapter.calls) == 1
+    env.now = T0 + timedelta(days=1)
+    env.lb.add("daily", "pl2", [lbtrack(1, dur=200000)])
+    env.sync()
+    assert env.states(2)["Song 1"] != ST.MULTIPLE_MATCH
+
+
+def test_not_same_only_for_live_ambiguous(env):
+    import lb_queries
+    env.nd.main = [ndsong("a", "A", "Song 1", dur=200), ndsong("b", "A", "Song 1", dur=400)]
+    env.lb.add("weekly_jams", "pl", [lbtrack(1, dur=None)])
+    env.sync()
+    with pytest.raises(ValueError):
+        lb_queries.item_action(env.db, env.items()["Song 1"]["id"], "not_same")

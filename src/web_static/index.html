@@ -733,7 +733,7 @@ const RUN_ZH = {running: '运行中', done: '完成', failed: '失败', paused: 
 const RUN_CLS = {running: 'run', done: 'ok', failed: 'bad', paused: 'warn', interrupted: 'warn'};
 const REASON_ZH = {rejected: '你放弃了网盘里的版本', exists: '下载目录或音乐库里已有', dup_resolved: '与主库重复，已保留主库那份', variant: '库里是电台版/单曲版，建议尽快替换为原版', not_found: '音乐平台没有这首', only_mp3: '只有 MP3（库只要无损）', no_copyright: '无版权/已下架', cooldown: '冷却期内不重复搜索',
   over_limit: '超出最大新下载数', promote_conflict: '主库已有同名文件，未转正', promote_error: '转正出错，将自动重试', expired: '试听期满已清理',
-  exception: '处理出错', multiple: '本地有多个候选', download: '下载失败', api: '接口错误', invalid: '文件校验失败'};
+  exception: '处理出错', multiple: '本地有多个候选', live_ambiguous: '库里有只差 Live 标记的版本，请判断是不是同一首', download: '下载失败', api: '接口错误', invalid: '文件校验失败'};
 const STAT = {  // 统计项：[中文名, 说明（鼠标悬停显示）]
   recommended: ['推荐', '推荐来源里的歌曲总数'],
   to_download: ['待下载', '本地没有、也还没下载的歌（「获取推荐后自动下载」关闭时只获取推荐）：在推荐歌单里点「下载」即可'],
@@ -743,7 +743,7 @@ const STAT = {  // 统计项：[中文名, 说明（鼠标悬停显示）]
   not_found: ['音乐平台未找到', '在音乐平台里没搜到这首歌'],
   failed: ['失败', '下载或提交失败，下次会重试'],
   skipped: ['已跳过', '超出「最大新下载数」，本轮不下载'],
-  multiple: ['待选择', '本地有多首难以区分的候选，需要你在「推荐」里手动选择是哪一首'],
+  multiple: ['待选择', '本地有多首难以区分的候选，或库里只有 Live/非 Live 的另一版本：需要你在「推荐」里判断是不是同一首'],
   to_review: ['待审核', '从网盘下载、等你审核元数据的歌：在「推荐」页点「审核」对比原有标签与推荐标签后再入库'],
   review_rewritten: ['已重写标签', '审核时选了「用推荐的」：清空原有标签与封面，只写入推荐的内容'],
   review_kept: ['保留原标签', '审核时选了「保留原有标签」'],
@@ -795,7 +795,7 @@ function renderTodo() {
   card.classList.remove('hide');
   $('todoSum').textContent = `共 ${T.total} 项`;
   const rows = [];
-  if (T.multiple) rows.push(['multiple', T.multiple, '首待选择', '本地有多首难以区分的候选，需要你指定是哪一首', '去选择']);
+  if (T.multiple) rows.push(['multiple', T.multiple, '首待选择', '本地有多首难以区分的候选，或只差 Live 标记的版本，需要你判断', '去选择']);
   if (T.dup) rows.push(['dup', T.dup, '首疑似与主库重复', '选择保留哪一份：主库那份 / 试听库这份 / 两份都留', '去处理']);
   if (T.review) rows.push(['review', T.review, '首网盘文件待审核', '网盘文件的标签可能夹带广告：对比原有与推荐的元数据后再入库', '去审核']);
   if (T.love_unresolved) rows.push(['love', T.love_unresolved, '首红心解析不出 MBID', '没法同步到 ListenBrainz：可搜索 MusicBrainz 指定，或忽略', '去处理']);
@@ -1100,14 +1100,19 @@ async function dupAct(id, choice, mainId) {
 }
 function setLstState(k) { lstState = k; listItems(); }
 async function itemAct(id, action, arg) {
-  try { await api('/api/lb/item', {id, action, arg: arg || ''}); toast(action === 'retry' ? '已加入重试，下次同步会处理' : action === 'dup_dismiss' ? '已忽略，不再提示' : '已更新'); listItems(); todoRefresh(); }
+  try { await api('/api/lb/item', {id, action, arg: arg || ''}); toast(action === 'retry' ? '已加入重试，下次同步会处理' : action === 'dup_dismiss' ? '已忽略，不再提示' : action === 'not_same' ? '已改为待下载，点「下载」或等下次同步' : '已更新'); listItems(); todoRefresh(); }
   catch (e) { toast(e.message); }
 }
 function openCand(id) {
   const i = lstData[id]; if (!i) return;
-  $('candFor').textContent = `${i.artist} - ${i.title}`;
-  $('candList').innerHTML = i.candidates.map(c => `<div class="sched"><div class="grow"><b>${esc(c.title)}</b> <span class="sub">${esc(c.artist)} · ${esc(c.album)} · ${c.duration ? Math.floor(c.duration / 60) + ':' + String(c.duration % 60).padStart(2, '0') : '时长未知'}</span>
-    <div class="sub">${c.library === 'main' ? '主库' : '试听库'}</div></div><button class="sm" onclick="chooseCand(${id}, '${esc(c.nd_song_id)}')">就是这首</button></div>`).join('') || '<div class="sub">没有候选</div>';
+  const live = i.reason_kind === 'live_ambiguous';
+  const fmt = n => n ? Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0') : '时长未知';
+  $('candFor').textContent = `${i.artist} - ${i.title}` + (live ? `　·　推荐的时长 ${fmt(i.duration)}` : '');
+  const diff = c => live && i.duration && c.duration ? `（相差 ${Math.abs(c.duration - i.duration)} 秒）` : '';
+  $('candList').innerHTML = (live ? '<div class="sub">库里有同一首歌，但 Live 标记与推荐的不一致（一边是 Live，一边不是）。若是同一首，点「就是这首」；若是不同录音，点下面的「不是同一首，去下载」。</div>' : '') +
+    (i.candidates.map(c => `<div class="sched"><div class="grow"><b>${esc(c.title)}</b> <span class="sub">${esc(c.artist)} · ${esc(c.album)} · ${fmt(c.duration)}${diff(c)}</span>
+    <div class="sub">${c.library === 'main' ? '主库' : '试听库'}</div></div><button class="sm" onclick="chooseCand(${id}, '${esc(c.nd_song_id)}')">就是这首</button></div>`).join('') || '<div class="sub">没有候选</div>') +
+    (live ? `<div class="acts"><button class="ghost sm" onclick="notSame(${id})">不是同一首，去下载</button></div>` : '');
   $('candDlg').showModal();
 }
 /* ---- 审核网盘文件的元数据 ---- */
@@ -1132,6 +1137,7 @@ async function reviewDo(choice) {
   $('reviewDlg').close();
   await startSyncHere({kind: 'review', item_id: rvItem, choice}, REVIEW_MSG[choice] + '（处理中）');
 }
+async function notSame(id) { $('candDlg').close(); await itemAct(id, 'not_same'); }
 async function chooseCand(id, songId) { $('candDlg').close(); await itemAct(id, 'choose', songId); }
 
 /* ---- 任务 ---- */

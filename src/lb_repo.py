@@ -139,6 +139,21 @@ def save_candidates(db: Database, item_id: int, files: Iterable[Any]) -> None:
                          [(item_id, f.nd_song_id, f.library) for f in files])
 
 
+def live_decisions(db: Database, track_id: int) -> Dict[str, str]:
+    """某首推荐歌曲已做过的「Live 版本是不是同一首」判断：{nd_song_id: 'same'|'different'}。"""
+    with db.lock:
+        rows = db.conn.execute("SELECT nd_song_id, decision FROM live_decisions WHERE track_id=?", (track_id,)).fetchall()
+    return {r["nd_song_id"]: r["decision"] for r in rows}
+
+
+def set_live_decisions(db: Database, track_id: int, decisions: Dict[str, str], now: Optional[datetime] = None) -> None:
+    ts = now_iso(now)
+    with db.transaction() as conn:
+        conn.executemany("INSERT INTO live_decisions(track_id, nd_song_id, decision, decided_at) VALUES(?,?,?,?) "
+                         "ON CONFLICT(track_id, nd_song_id) DO UPDATE SET decision=excluded.decision, decided_at=excluded.decided_at",
+                         [(track_id, k, v, ts) for k, v in decisions.items()])
+
+
 def record_download(db: Database, item_id: int, attempt: int, *, ok: bool, platform_id: Optional[int] = None,
                     error_kind: str = "", error: str = "", path: str = "", quality: str = "",
                     file_type: str = "", now: Optional[datetime] = None) -> None:

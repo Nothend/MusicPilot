@@ -355,3 +355,42 @@ def test_same_album_widens_duration_tolerance_to_60s():
 def test_same_album_does_not_merge_live_version():
     files = [F("m", "毛不易", "像我这样的人 (Live)", dur=239, album="平凡的一天")]
     assert run(files, artist="毛不易", title="像我这样的人", duration_s=207, album="平凡的一天").status == "none"
+
+
+# ---------------------------------------------------------------- 仅差 Live 标记
+def lv(files, **t):
+    return M.live_variants(LocalIndex(files), Target(**t))
+
+
+def test_live_in_library_but_not_in_target_close_duration_is_same():
+    r = lv([F("a", "张韶涵", "阿刁 (Live)", dur=322)], artist="張韶涵", title="阿刁", duration_s=320)
+    assert (r.status, r.chosen.nd_song_id, r.kind) == ("main", "a", "live")
+
+
+def test_live_difference_with_far_duration_asks_user_both_directions():
+    r = lv([F("a", "张韶涵", "阿刁 (Live)", dur=322)], artist="張韶涵", title="阿刁", duration_s=315)   # 差 7 秒
+    assert (r.status, r.kind, [f.nd_song_id for f in r.candidates]) == ("multiple", "live", ["a"])
+    r = lv([F("a", "A", "Song", dur=200)], artist="A", title="Song - Live", duration_s=260)             # 反方向：推荐有 Live，库里没有
+    assert r.status == "multiple" and r.kind == "live"
+
+
+def test_live_difference_with_unknown_duration_asks_user():
+    assert lv([F("a", "A", "Song (Live)", dur=None)], artist="A", title="Song", duration_s=200).status == "multiple"
+
+
+def test_live_variants_ignores_other_differences():
+    f = [F("a", "A", "Song (Live)", dur=200)]
+    assert lv(f, artist="A", title="Song (Remix)", duration_s=200).status == "none"            # 还差 Remix
+    assert lv(f, artist="B", title="Song", duration_s=200).status == "none"                     # 歌手不同（赵雷那首）
+    assert lv(f, artist="A", title="Other", duration_s=200).status == "none"                    # 标题不同
+    assert lv([F("a", "A", "Song (Live)")], artist="A", title="Song (Live)", duration_s=1).status == "none"   # 都是 Live：本函数不管
+    assert lv([F("a", "A", "Song (Instrumental)")], artist="A", title="Song", duration_s=200).status == "none"
+
+
+def test_live_cleaner_handles_various_spellings():
+    for t in ("阿刁 (Live)", "阿刁 - 现场版", "阿刁 [live版]", "阿刁 演唱会版"):
+        assert lv([F("a", "A", t, dur=100)], artist="A", title="阿刁", duration_s=100).status == "main", t
+
+
+def test_plain_match_still_treats_live_as_different():
+    assert run([F("a", "A", "Song (Live)", dur=200)], artist="A", title="Song", duration_s=200).status == "none"

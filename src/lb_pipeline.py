@@ -26,7 +26,7 @@ from db import Database
 from lb_client import batch_date
 from lb_settings import NETEASE_DAILY, REC_LABELS, STAGING_DIRNAME, types_of
 from local_index import load_index, sync_index
-from matcher import LocalFile, LocalIndex, MatchResult, Target, is_soft_edition, match
+from matcher import LocalFile, LocalIndex, MatchResult, Target, is_soft_edition, live_variants, match
 from task_manager import RunHandle
 
 logger = logging.getLogger(__name__)
@@ -353,11 +353,30 @@ def _folder_existing(d: SyncDeps, it, target: Target, index: LocalIndex, who: st
     return False
 
 
+def _match_local(d: SyncDeps, it, index: LocalIndex, target: Target) -> MatchResult:
+    """`match` 之外再看「只差 Live 标记」的版本：时长接近 → 同一首；否则待人判断。
+    人以前判断过的（live_decisions）直接沿用：判过「同一首」→ 算已有；候选全判过「不是」→ 当作库里没有（去下载）。"""
+    r = match(index, target)
+    if r.status != "none":
+        return r
+    lv = live_variants(index, target)
+    if lv.status != "multiple":
+        return lv                                   # none，或时长接近直接算已有
+    decided = lb_repo.live_decisions(d.db, it["track_id"])
+    same = [f for f in lv.candidates if decided.get(f.nd_song_id) == "same"]
+    if same:
+        return MatchResult(same[0].library, "live_decided", same[0], same, kind="live")
+    undecided = [f for f in lv.candidates if f.nd_song_id not in decided]
+    if undecided:
+        return lv
+    return MatchResult("none")
+
+
 def _local_existing(d: SyncDeps, it, index: LocalIndex, target: Target, who: str) -> bool:
     """联动模式的本地判断：主库/试听库已有 → 直接复用；多个候选 → 待人工选择；更早条目已下载 → 复用。True = 已处理。
     """
     h, db = d.handle, d.db
-    r = match(index, target)
+    r = _match_local(d, it, index, target)
     if r.status == "main":
         lb_repo.set_state(db, it["id"], ST.LOCAL_MAIN, note=f"主库已有（{r.level}）", now=d.now(),
                           local_file_id=r.chosen.nd_song_id, starred=1 if r.chosen.starred else 0,
@@ -369,9 +388,13 @@ def _local_existing(d: SyncDeps, it, index: LocalIndex, target: Target, who: str
         h.add("local_discovery"); h.log(f"试听库已有：{who}")
         return True
     if r.status == "multiple":
+        live = r.kind == "live"
         lb_repo.save_candidates(db, it["id"], r.candidates)
-        lb_repo.set_state(db, it["id"], ST.MULTIPLE_MATCH, note=r.note, now=d.now(), reason_kind="multiple", reason=r.note)
-        h.add("multiple"); h.log(f"本地有多个无法区分的候选，等待人工选择：{who}", "WARNING")
+        lb_repo.set_state(db, it["id"], ST.MULTIPLE_MATCH, note=r.note, now=d.now(),
+                          reason_kind="live_ambiguous" if live else "multiple", reason=r.note)
+        h.add("multiple")
+        h.log(f"库里有只差 Live 标记的版本，等你判断是不是同一首：{who}" if live
+              else f"本地有多个无法区分的候选，等待人工选择：{who}", "WARNING")
         return True
 
     # 2) 同一首歌在更早的条目里已落地到试听库（索引还没刷新）：直接复用

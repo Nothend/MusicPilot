@@ -317,7 +317,17 @@ def _v12(conn: sqlite3.Connection) -> None:
         created_at TEXT NOT NULL)""")
 
 
-MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8, _v9, _v10, _v11, _v12]
+def _v13(conn: sqlite3.Connection) -> None:
+    """v13：「只差 Live 标记」的人工判断记录——某首推荐歌曲(track)与某个库内文件是不是同一首，下次同步不再重复询问。"""
+    conn.execute("""CREATE TABLE IF NOT EXISTS live_decisions (
+        track_id INTEGER NOT NULL REFERENCES tracks(id),
+        nd_song_id TEXT NOT NULL,
+        decision TEXT NOT NULL CHECK (decision IN ('same','different')),
+        decided_at TEXT NOT NULL,
+        PRIMARY KEY (track_id, nd_song_id))""")
+
+
+MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [_v1, _v2, _v3, _v4, _v5, _v6, _v7, _v8, _v9, _v10, _v11, _v12, _v13]
 
 
 class DatabaseVersionError(RuntimeError):

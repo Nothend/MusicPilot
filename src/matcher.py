@@ -12,6 +12,7 @@ Remastered 等不当作同一录音，不会被"标准化"抹掉）。时长作�
 
 名词：
 - 「同一录音的重复文件」（如单曲+专辑里的同一首）：标题相同且时长一致 → 取一个即可，不算歧义；
+- 仅差 Live 标记：见文件末尾 live_variants（时长接近算同一首，否则人工判断）；
 - MULTIPLE_MATCH：同级候选的标题/时长对不上，无法判断是否同一录音 → 交给人工选择。
 """
 
@@ -25,6 +26,7 @@ from opencc import OpenCC
 from rapidfuzz import fuzz
 
 DURATION_TOLERANCE_S = 20     # 与目标时长相差超过它，视为不同录音
+LIVE_SAME_S = 5               # 仅差 Live 标记的两个版本：时长相差不超过它，视为同一录音（直接算已有）；否则交给人判断
 SAME_RECORDING_S = 5          # 无目标时长时，候选之间相差不超过它，视为同一录音的重复文件
 FUZZY_THRESHOLD = 92
 FUZZY_MIN_LEN = 5             # 标准化后短于此的标题只接受完全相同，避免误判
@@ -198,6 +200,7 @@ class MatchResult:
     candidates: List[LocalFile] = field(default_factory=list)   # multiple 时供人工选择；其余为同一录音的全部文件
     near_misses: List[LocalFile] = field(default_factory=list)  # 歌手+歌名吻合但时长相差过大（仅供日志）
     note: str = ""
+    kind: str = ""                                # live：仅差 Live 标记（multiple 时表示「版本待人工确认」）
 
 
 # ---------------------------------------------------------------- 索引
@@ -360,3 +363,44 @@ def match(index: LocalIndex, t: Target, libraries: Tuple[str, ...] = ("main", "d
             return _resolve(t, level, [f for l, f in scored if RANK[l] == best], lib)
     return MatchResult("none", near_misses=near,
                        note="歌名吻合但时长相差过大，视为不同录音" if near else "")
+
+
+# ---------------------------------------------------------------- 仅差 Live 标记
+_LIVE_RX = next(rx for k, rx in _TAGS if k == "live")
+_LIVE_CLEAN = re.compile("(?:" + _LIVE_RX.pattern + r")(?:版|\s*version)?")
+
+
+def _strip_live(folded_title: str) -> str:
+    """去掉 Live/现场/演唱会 标记（含「版」「version」）及其括号后的标题键；用来判断「只差 Live 标记」。"""
+    return compact(strip_feat(_LIVE_CLEAN.sub(" ", folded_title)))
+
+
+def live_variants(index: LocalIndex, t: Target, libraries: Tuple[str, ...] = ("main", "discovery")) -> MatchResult:
+    """`match` 没找到时的补充判断：歌手有交集、标题只差「Live」标记（一边有一边没有，其余版本标记必须一致）的库内文件。
+    - 时长双方都已知且相差 ≤ LIVE_SAME_S：同一录音 → status=main/discovery（kind=live）；
+    - 其余（时长差大或未知）：status=multiple、kind=live，候选交给人判断；
+    - 没有这样的文件：status=none。
+    只给联动模式的「本地已有」判断用；挑平台搜索结果、去重、转正等仍严格区分 Live。"""
+    names = _target_artists(t)
+    if not names:
+        return MatchResult("none")
+    tags, base = version_tags(t.title), _strip_live(fold(t.title))
+    if len(base) < 2:
+        return MatchResult("none")
+    near: List[Tuple[str, LocalFile]] = []
+    for lib in libraries:
+        for f in index.candidates_for(names, lib):
+            if tags ^ version_tags(f.title) == {"live"} and _strip_live(fold(f.title)) == base:
+                near.append((lib, f))
+    if not near:
+        return MatchResult("none")
+    for lib in libraries:
+        close = [f for l, f in near if l == lib
+                 and (d := _dur_diff(t, f)) is not None and d <= LIVE_SAME_S]
+        if close:
+            r = _resolve(t, "live_close", close, lib)
+            r.kind = "live"
+            return r
+    cands = sorted((f for _, f in near), key=lambda f: (libraries.index(f.library), _order_key(t, f)))
+    return MatchResult("multiple", level="live", candidates=cands, kind="live",
+                       note="库里与推荐的只差 Live 标记（时长不吻合或未知），请判断是不是同一首")

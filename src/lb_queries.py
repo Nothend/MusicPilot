@@ -172,7 +172,8 @@ def items(db: Database, batch_id: int, state: str = "") -> Dict[str, Any]:
         out.append({
             "id": r["id"], "position": r["position"], "artist": r["artist"], "title": r["title"], "album": r["album"],
             "recommended_at": (b["lb_date"] or "")[:10], "state": r["state"], "reason_kind": r["reason_kind"],
-            "reason": r["reason"], "path": r["local_path"] or "", "starred": bool(r["starred"]), "keep": bool(r["keep"]),
+            "reason": r["reason"], "duration": round(r["duration_ms"] / 1000) if r["duration_ms"] else None,
+            "path": r["local_path"] or "", "starred": bool(r["starred"]), "keep": bool(r["keep"]),
             "promoted": r["state"] == ST.PROMOTED, "entered_discovery_at": r["entered_discovery_at"],
             "retry_count": r["retry_count"], "next_retry_at": r["next_retry_at"],
             "candidates": candidates(db, r["id"]) if r["state"] == ST.MULTIPLE_MATCH else [],
@@ -219,7 +220,7 @@ RETRYABLE = (ST.NOT_FOUND, ST.DOWNLOAD_FAILED, ST.SKIPPED)
 
 
 def item_action(db: Database, item_id: int, action: str, arg: str = "", now: Optional[datetime] = None) -> Dict[str, Any]:
-    """keep / unkeep / retry / choose。出错抛 ValueError（页面显示）。返回更新后的条目摘要。"""
+    """keep / unkeep / retry / choose / not_same。出错抛 ValueError（页面显示）。返回更新后的条目摘要。"""
     it = lb_repo.get_item(db, item_id)
     if it is None:
         raise ValueError("条目不存在")
@@ -256,6 +257,8 @@ def item_action(db: Database, item_id: int, action: str, arg: str = "", now: Opt
         if arg not in cand:
             raise ValueError("所选歌曲不在候选列表里")
         lib = cand[arg]["library"]
+        if it["reason_kind"] == "live_ambiguous":      # 记住：下次同一首歌不再询问
+            lb_repo.set_live_decisions(db, it["track_id"], {arg: "same"}, now)
         if lib == "main":
             lb_repo.set_state(db, item_id, ST.LOCAL_MAIN, note="手动选择候选", now=now, local_file_id=arg,
                               reason_kind="", reason="")
@@ -268,6 +271,14 @@ def item_action(db: Database, item_id: int, action: str, arg: str = "", now: Opt
                               reason_kind="", reason="")
         with db.transaction() as c:
             c.execute("DELETE FROM match_candidates WHERE item_id=?", (item_id,))
+    elif action == "not_same":
+        if it["state"] != ST.MULTIPLE_MATCH or it["reason_kind"] != "live_ambiguous":
+            raise ValueError("只有「版本待确认」的条目可以标记为「不是同一首」")
+        lb_repo.set_live_decisions(db, it["track_id"], {c["nd_song_id"]: "different" for c in candidates(db, item_id)}, now)
+        lb_repo.set_state(db, item_id, ST.PENDING, note="手动判断：库里的版本不是同一首", now=now, reason_kind="", reason="")
+        with db.transaction() as c:
+            c.execute("DELETE FROM match_candidates WHERE item_id=?", (item_id,))
+            c.execute("UPDATE recommendation_batches SET status='active' WHERE id=?", (it["batch_id"],))
     else:
         raise ValueError("未知的操作")
 
