@@ -22,6 +22,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   });
   const w = dom.window, d = w.document, $ = id => d.getElementById(id), txt = id => ($(id).textContent || '').replace(/\s+/g, ' ');
   await sleep(1500);                                                   // 页面加载 + loadState/initData
+  const jGo = async v => { d.querySelector('#jNav button[data-v="' + v + '"]').click(); await sleep(1000); };
   check('登录态下主界面可见', !$('main').classList.contains('hide'));
   check('导航里有「推荐」标签', !!d.querySelector('#nav button[data-tab="rec"]'));
 
@@ -63,20 +64,26 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('空列表时没有往期提示条，也有去「往期推荐」的入口', $('recPin').classList.contains('hide') && txt('lstItems').includes('往期推荐'));
   // ---- 记录页概览 + 往期推荐 + 维护操作
   d.querySelector('#nav button[data-tab="jobs"]').click(); await sleep(1200);
-  check('记录页顶部是推荐概览，下面依次是往期推荐、维护操作、任务记录', !!$('ovCard') && !!$('histCard') && !!$('maint') && !!(d.getElementById('ovCard').compareDocumentPosition($('histCard')) & 4) && !!(d.getElementById('histCard').compareDocumentPosition($('maint')) & 4) && !!(d.getElementById('maint').compareDocumentPosition($('runsSec')) & 4));
+  check('记录页用二级标签：任务记录 / 推荐概览 / 往期推荐 / 下载任务，默认是任务记录', [...d.querySelectorAll('#jNav button')].map(b => b.dataset.v).join(',') === 'runs,ov,hist,dl' && d.querySelector('#jNav button.on').dataset.v === 'runs' && !$('jv-runs').classList.contains('hide') && ['jv-ov', 'jv-hist', 'jv-dl'].every(i => $(i).classList.contains('hide')));
+  check('任务记录页只有推荐任务，没有概览、往期、维护操作', !!$('jv-runs').querySelector('#runsBox') && !$('jv-runs').querySelector('#ovCard, #histCard, #maint, #jobs'));
+  await jGo('ov');
+  check('推荐概览页：概览卡片 + 折叠的维护操作；往期、任务记录不在这里', $('jv-ov').contains($('ovCard')) && $('jv-ov').contains($('maint')) && !$('jv-ov').querySelector('#histCard, #runsBox, #jobs') && !$('jv-ov').classList.contains('hide'));
   check('统计分「本期推荐」「曲库流转」两组', $('dbTiles').children.length >= 8 && $('dbTiles2').children.length === 4, `${$('dbTiles').children.length}+${$('dbTiles2').children.length}`);
   const tiles = txt('dbTiles') + txt('dbTiles2'); logs.push('   统计: ' + tiles.slice(0, 200));
   check('本期推荐歌曲=9（每周熟悉 7 + 每日熟悉 2；本周没有每周探新，旧的不算）', /9本期推荐歌曲/.test(tiles) && /2\/3本期歌单/.test(tiles), tiles.slice(0, 80));
   check('提示本期缺哪个列表', txt('ovMissing').includes('每周探新'), txt('ovMissing'));
+  await jGo('hist');
   check('往期推荐列出各批次（含已过期的 9 月那份）并带状态徽标', ['每周熟悉', '每日熟悉', '每周探新', '2026-09-07'].every(x => txt('histBox').includes(x)) && txt('histBox').includes('未找到') && txt('histBox').includes('下载失败'), txt('histBox').slice(0, 160));
   check('往期推荐里只有当前周期的批次带「当前」标记', d.querySelectorAll('#histBox .tag.ok').length === 2, `${d.querySelectorAll('#histBox .tag.ok').length}`);
   d.querySelector('#hType button[data-v="daily"]').click(); await sleep(700);
   check('往期推荐可按类型筛选', d.querySelectorAll('#histBox .batch').length === 1 && txt('histBox').includes('每日熟悉'));
   d.querySelector('#hType button[data-v=""]').click(); await sleep(500);
+  await jGo('ov');
   check('空闲状态 + 上次任务', txt('dbCurrent').includes('空闲') && txt('dbCurrent').includes('推荐同步'), txt('dbCurrent').slice(0, 80));
   check('显示计划', txt('dbNext').includes('每日同步'), txt('dbNext').slice(0, 80));
   check('维护操作默认折叠，展开后有转正/清理/索引/红心同步按钮', !$('maint').open && ['一键转正红心曲目', '立即清理过期文件', '同步本地索引', '预览要提交的红心'].every(t => [...$('maint').querySelectorAll('button')].some(b => b.textContent.trim() === t)));
   // 点「查看」：回到推荐页看那一批（往期的有提示条，当前的没有）
+  await jGo('hist');
   const hv = [...d.querySelectorAll('#histBox .batch')].find(r => r.textContent.includes('2026-09-07'));
   hv.querySelector('a.lnk').click(); await sleep(1200);
   check('往期推荐点「查看」：跳到推荐页，显示往期提示条与「回到本周」', $('p-rec').classList.contains('on') && !$('recPin').classList.contains('hide') && txt('recPin').includes('2026-09-07') && txt('recPin').includes('回到本周'), txt('recPin'));
@@ -152,8 +159,8 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('入库后「需要你处理」里不再有待审核', !txt('todoList').includes('网盘文件待审核'));
   // ---- 任务
   d.querySelector('#nav button[data-tab="jobs"]').click(); await sleep(300);
-  d.querySelector('#jKind button[data-v="lb"]').click(); await sleep(900);
-  check('合并后：任务记录页里选「推荐联动」只显示推荐任务', d.getElementById('jobsSec').classList.contains('hide') && !d.getElementById('runsSec').classList.contains('hide'));
+  await jGo('runs');
+  check('任务记录页只显示推荐任务，下载任务在「下载任务」标签里', !$('jv-runs').classList.contains('hide') && $('jv-dl').classList.contains('hide') && !!$('jv-dl').querySelector('#jobs'));
   check('任务列表有记录', d.querySelectorAll('#runsBox .run').length >= 1, `${d.querySelectorAll('#runsBox .run').length}`);
   d.querySelector('#runsBox .rh').click(); await sleep(900);
   const log = txt('rlog-' + d.querySelector('#runsBox .run').id.replace('run-', ''));
@@ -161,6 +168,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
 
   // ---- 快捷操作
   d.querySelector('#nav button[data-tab="jobs"]').click(); await sleep(900);
+  await jGo('ov');
   check('概览运行状态使用键值排版', d.querySelectorAll('#dbCurrent .k').length >= 2, `${d.querySelectorAll('#dbCurrent .k').length}`);
   await w.eval('actLovePreview()'); await sleep(1500);                    // 预览任务真的在后台跑完
   const lp = await (await fetch(BASE + '/api/lb/runs')).json();
@@ -175,7 +183,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('统计项没有英文键名', !/[a-z]_[a-z]|via|dedup|dup_/.test(stx), stx);
   const sth = await w.eval("statsHtml({dup_suspects:2})");
   check('统计项带悬停说明', sth.includes('title="') && sth.includes('选择保留哪一份'), sth);
-  check('「任务记录」里推荐联动任务排在下载任务上面', !!(d.getElementById('runsSec').compareDocumentPosition(d.getElementById('jobsSec')) & 4), '');
+  await jGo('dl'); check('「下载任务」标签显示下载任务列表与说明', !$('jv-dl').classList.contains('hide') && txt('jv-dl').includes('下载任务') && $('jv-runs').classList.contains('hide')); await jGo('runs');
   // ---- 解析不出 MBID 的红心：人工处理
   await w.eval('showUnresolved()'); await sleep(700);
   check('未解析对话框列出解析不出的歌和原因', $('unresDlg').hasAttribute('open') && txt('unresList').includes('歌手乙 - 野生歌') && txt('unresList').includes('没查到'), txt('unresList'));
@@ -237,6 +245,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   await sleep(900);
   check('来源为音乐平台时推荐页只有「每日推荐」一个列表按钮，说明里也是', [...d.querySelectorAll('#lstType button')].map(b => b.dataset.v).join(',') === 'netease_daily' && txt('lstDesc').includes('每日推荐') && !txt('lstDesc').includes('ListenBrainz 的'), txt('lstDesc'));
   d.querySelector('#nav button[data-tab="jobs"]').click(); await sleep(1200);
+  await jGo('hist');
   check('记录页往期推荐只列当前来源的类型，没有 ListenBrainz 的每周批次', !txt('hType').includes('每周') && txt('hType').includes('每日推荐') && !txt('histBox').includes('每周'), txt('hType') + '|' + txt('histBox').slice(0, 60));
   d.querySelector('#nav button[data-tab="set"]').click(); await sleep(600);
   $('lbSource').value = 'listenbrainz'; $('lbSource').dispatchEvent(new w.Event('change')); await sleep(700);
@@ -265,6 +274,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   check('下载目录已保存，检查目录给出结果', $('outDir').value === '/tmp/ui_out_dir' && txt('lbOutRes').includes('下载目录可用'), txt('lbOutRes'));
   d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(300);
   d.querySelector('#nav button[data-tab="jobs"]').click(); await sleep(1200);
+  await jGo('ov');
   const qaBtns = [...d.querySelectorAll('#maint button')].filter(b => !b.closest('.hide')).map(b => b.textContent);
   check('记录页（未联动）：维护操作整组隐藏（没有转正/清理/索引/红心）', $('maint').classList.contains('hide') && qaBtns.length === 0, qaBtns.join(','));
   check('记录页（未联动）：统计只有下载相关的 8 项，没有曲库流转', $('dbTiles').children.length === 8 && $('dbTiles2').classList.contains('hide') && txt('dbTiles').includes('已下载') && txt('dbTiles').includes('待下载') && !txt('dbTiles').includes('待清理'), txt('dbTiles'));
@@ -282,13 +292,14 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   w.fetch = (u, o) => { if (String(u).includes('/api/lb/action') && o && o.body) sent.push(JSON.parse(o.body)); return rf0(u, o); };
   $('recSyncBtn').click(); await sleep(400);
   check('「获取推荐」请求明确不下载（download=false），与设置里的自动下载无关', sent.length === 1 && sent[0].kind === 'sync' && sent[0].download === false, JSON.stringify(sent));
-  check('点「获取推荐」留在本页，提示只获取不下载', $('p-rec').classList.contains('on') && txt('toast').includes('只获取，不下载'), txt('toast'));
+  check('点「获取推荐」留在本页，提示只获取不下载', $('p-rec').classList.contains('on') && (txt('toast').includes('只获取，不下载') || txt('toast').includes('推荐同步完成')), txt('toast'));
   for (let i = 0; i < 40 && $('recSyncBtn').disabled; i++) await sleep(500);
   check('任务结束后按钮恢复可点（列表自动刷新）', !$('recSyncBtn').disabled);
   $('recSyncBtn').click();
-  let sawDisabled = false;                                                                   // 任务很短：连续采样，只要运行期间禁用过就算
-  for (let i = 0; i < 60 && !sawDisabled; i++) { await sleep(25); sawDisabled = $('recSyncBtn').disabled && $('recDlBtn').disabled; }
+  let sawDisabled = false, sawBar = false;                                                                   // 任务很短：连续采样，只要运行期间禁用过就算
+  for (let i = 0; i < 60 && !sawDisabled; i++) { await sleep(25); sawDisabled = sawDisabled || ($('recSyncBtn').disabled && $('recDlBtn').disabled); sawBar = sawBar || (!$('recTask').classList.contains('hide') && txt('recTask').includes('查看实时日志') && txt('recTask').includes('推荐同步')); if (sawDisabled && sawBar) break; }
   check('任务运行中顶部「获取推荐」「下载」被禁用', sawDisabled);
+  check('任务进行中：推荐页顶部出现提示条，写明在做什么并带「查看实时日志」', sawBar);
   d.querySelector('#nav button[data-tab="set"]').click(); await sleep(4000);               // 任务期间离开推荐页
   d.querySelector('#nav button[data-tab="rec"]').click(); await sleep(1500);
   check('开始获取后切到别的标签再回来，按钮不会一直禁用', !$('recSyncBtn').disabled && !$('recDlBtn').disabled);
@@ -308,7 +319,7 @@ const check = (name, cond, extra) => { logs.push(`${cond ? '✔' : '✘'} ${name
   sent.length = 0;
   pend[0].querySelector('button.sm').click(); await sleep(500);
   check('单首「下载」请求明确要下载并带条目编号', sent.length === 1 && sent[0].download === true && Number.isInteger(sent[0].item_id), JSON.stringify(sent));
-  check('点单首「下载」：提示开始下载，并产生 1 个同步任务', txt('toast').includes('开始下载这一首') && (await countRuns()) === runsBefore + 1, txt('toast'));
+  check('点单首「下载」：提示开始下载，并产生 1 个同步任务', (txt('toast').includes('开始下载这一首') || txt('toast').includes('推荐同步完成')) && (await countRuns()) === runsBefore + 1, txt('toast'));
   for (let i = 0; i < 40 && $('recDlBtn').disabled; i++) await sleep(500);
   check('下载任务结束后按钮恢复', !$('recDlBtn').disabled && !$('recSyncBtn').disabled);
   d.querySelector('#nav button[data-tab="set"]').click(); await sleep(400);

@@ -18,6 +18,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 20
+SEARCH_TIMEOUT = 120      # 搜索：Meilisearch 冷缓存时（重启后第一次、索引刚写入后）一次查询可能要一两分钟，不能按普通请求的超时算
 CHUNK = 1024 * 256
 
 
@@ -46,10 +47,14 @@ class OpenListClient:
             raise OpenListError("登录失败：没有拿到 token", "auth")
         self._token = token
 
-    def _raw(self, method: str, path: str, body: Optional[dict] = None, auth: bool = True) -> Dict[str, Any]:
+    def _raw(self, method: str, path: str, body: Optional[dict] = None, auth: bool = True,
+             timeout: Optional[float] = None) -> Dict[str, Any]:
         headers = {"Authorization": self._token} if auth and self._token else {}
+        t = timeout or self.timeout
         try:
-            r = self.session.request(method, self.base + path, json=body, headers=headers, timeout=self.timeout)
+            r = self.session.request(method, self.base + path, json=body, headers=headers, timeout=t)
+        except requests.Timeout:
+            raise OpenListError(f"OpenList 超过 {t:.0f} 秒没有响应（搜索索引刚重启或还在写入时第一次查询会很慢），稍后会自动重试", "network")
         except requests.RequestException as e:
             raise OpenListError(f"连不上 OpenList（{type(e).__name__}）", "network")
         try:
@@ -59,13 +64,13 @@ class OpenListClient:
         d["_http"] = r.status_code
         return d
 
-    def _call(self, path: str, body: dict) -> Dict[str, Any]:
+    def _call(self, path: str, body: dict, timeout: Optional[float] = None) -> Dict[str, Any]:
         if not self._token:
             self._login()
-        d = self._raw("POST", path, body)
+        d = self._raw("POST", path, body, timeout=timeout)
         if d.get("code") == 401 or d["_http"] == 401:        # token 过期：重新登录一次
             self._login()
-            d = self._raw("POST", path, body)
+            d = self._raw("POST", path, body, timeout=timeout)
         code = d.get("code")
         if code != 200:
             msg = str(d.get("message") or f"HTTP {d['_http']}")
@@ -94,7 +99,7 @@ class OpenListClient:
     def search(self, parent: str, keywords: str, per_page: int = 100) -> List[Dict[str, Any]]:
         """在 parent 目录下搜索，返回文件（不含文件夹）：[{path, name, size}]。"""
         d = self._call("/api/fs/search", {"parent": parent, "keywords": keywords, "scope": 2, "page": 1,
-                                         "per_page": per_page, "password": ""})
+                                         "per_page": per_page, "password": ""}, timeout=SEARCH_TIMEOUT)
         out = []
         for it in d.get("content") or []:
             if it.get("is_dir"):

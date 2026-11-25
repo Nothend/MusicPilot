@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import lb_cleanup
+import lb_review
 import lb_period
 import lb_repo
 import lb_states as ST
@@ -117,7 +118,7 @@ def review_detail(db: Database, item_id: int) -> Dict[str, Any]:
     data = json.loads(rv["data_json"])
     return {"item": {"id": item_id, "artist": it["artist"], "title": it["title"], "album": it["album"], "state": it["state"]},
             "held_name": Path(rv["held_path"]).name, "exists": Path(rv["held_path"]).is_file(),
-            "original": data["original"], "proposed": data["proposed"]}
+            "original": data["original"], "proposed": lb_review.simplified_proposal(data["proposed"])}
 
 
 def _run_row(r) -> Optional[Dict[str, Any]]:

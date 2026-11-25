@@ -183,3 +183,45 @@ def test_review_detail_and_todo_and_http_flow(api):                             
     assert lb_repo.get_item(db, item)["state"] == ST.LOCAL_DISCOVERY
     assert api.get("/api/lb/todo").json()["review"] == 0
     assert api.post("/api/lb/action", {"kind": "review", "item_id": item, "choice": "reject"}).status_code == 400   # 已处理过的不能再审核
+
+
+# ---------------------------------------------------------------- 中文统一成简体（ListenBrainz / MusicBrainz 里的中文多是繁体）
+def test_simplify_converts_chinese_but_leaves_japanese_and_korean_alone():
+    from zh import simplify
+    assert simplify("羅大佑") == "罗大佑" and simplify("亞細亞的孤兒") == "亚细亚的孤儿" and simplify("Adele - 21") == "Adele - 21"
+    assert simplify("") == "" and simplify(None) is None
+    assert simplify("宇多田ヒカル 初恋 國") == "宇多田ヒカル 初恋 國"            # 含假名：日文汉字不能当繁体转
+    assert simplify("방탄소년단 體") == "방탄소년단 體"
+
+
+def test_proposal_is_simplified_in_the_adapter_and_the_staged_file_name(tmp_path):
+    from openlist_channel import OpenListAdapter
+    from test_openlist import FakeSession, flac_bytes
+    from openlist_client import OpenListClient
+    s = FakeSession({"/音乐/罗大佑/罗大佑 - 亚细亚的孤儿.flac": flac_bytes(tmp_path)})
+    a = OpenListAdapter(OpenListClient("http://ol", "u", "pw", session=s), "/音乐", sleep=lambda x: None)
+    r = a.download_song("羅大佑", "亞細亞的孤兒", tmp_path / "o", artists=["羅大佑"], album="之乎者也", recording_mbid=MBID)
+    p = r.review["proposed"]
+    assert (p["artist"], p["artists"], p["title"], p["album"]) == ("罗大佑", ["罗大佑"], "亚细亚的孤儿", "之乎者也")
+    assert Path(r.path).name == "罗大佑 - 亚细亚的孤儿.flac"
+
+
+def test_use_proposed_writes_simplified_even_for_an_older_traditional_proposal(env):   # noqa: F811
+    item, held, _ = hold(env)
+    data = json.loads(lb_repo.get_review(env.db, item)["data_json"])
+    data["proposed"].update(artist="羅大佑", artists=["羅大佑"], title="亞細亞的孤兒", album="之乎者也", lyric="[00:01.00]愛情")
+    lb_repo.save_review(env.db, item, str(held), "", data)
+    assert lb_queries.review_detail(env.db, item)["proposed"]["title"] == "亚细亚的孤儿"          # 对话框里看到的
+    run(env, item, "use_proposed")
+    f = FLAC(str(Path(env.settings["dirs"]["discovery"]) / held.name))
+    assert f["artist"] == ["罗大佑"] and f["title"] == ["亚细亚的孤儿"] and f["album"] == ["之乎者也"] and f["lyrics"] == ["[00:01.00]爱情"]
+
+
+def test_keep_original_fills_missing_tags_with_simplified_names(env):                        # noqa: F811
+    item, held, _ = hold(env)
+    f = FLAC(str(held)); del f["album"]; f.save()
+    data = json.loads(lb_repo.get_review(env.db, item)["data_json"])
+    data["proposed"].update(album="之乎者也專輯")
+    lb_repo.save_review(env.db, item, str(held), "", data)
+    run(env, item, "keep_original")
+    assert FLAC(str(Path(env.settings["dirs"]["discovery"]) / held.name))["album"] == ["之乎者也专辑"]

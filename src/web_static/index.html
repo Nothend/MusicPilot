@@ -70,6 +70,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .seg.auto{display:inline-flex}
 .seg .cnt{margin-left:5px;font-size:11px;opacity:.75}
 .empty{padding:14px 10px}
+.taskbar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:9px 12px;margin-bottom:10px;border:1px solid var(--pri);border-radius:8px;background:color-mix(in srgb,var(--pri) 8%,transparent);font-size:13px}
+.taskbar .dot{width:8px;height:8px;border-radius:50%;background:var(--pri);animation:tb 1s infinite alternate}@keyframes tb{to{opacity:.25}}
 .rvcols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;max-height:56vh;overflow:auto}
 .rvcols .kvl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:2px 8px;font-size:12px;word-break:break-all}
 .rvcols .kvl b{color:var(--sub);font-weight:500}
@@ -227,6 +229,21 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
 
 <!-- ============ 任务记录 ============ -->
 <div class="panel" id="p-jobs">
+<div class="tools" style="margin-bottom:10px">
+  <div class="seg auto" id="jNav"><button data-v="runs" class="on">任务记录</button><button data-v="ov">推荐概览</button><button data-v="hist">往期推荐</button><button data-v="dl">下载任务</button></div>
+</div>
+<div class="jv" id="jv-runs">
+<div class="card">
+  <h2>任务记录 <span class="sub">推荐的获取 / 下载 / 转正 / 清理等任务</span>
+    <button class="ghost sm" style="margin-left:auto" onclick="refreshJobsTab()">刷新</button></h2>
+  <div class="tools">
+    <div class="seg auto" id="jTrig"><button data-v="" class="on">全部</button><button data-v="manual">手动</button><button data-v="schedule">定时</button></div>
+    <label class="sw"><input type="checkbox" id="jFailed"> 仅看有失败的</label>
+  </div>
+  <div id="runsBox" class="sub">加载中…</div>
+</div>
+</div>
+<div class="jv hide" id="jv-ov">
 <div class="card" id="ovCard">
   <h2>推荐概览 <span class="sub" id="ovSrc"></span></h2>
   <div id="dbCurrent" class="kv"><span class="sub">加载中…</span></div>
@@ -236,12 +253,6 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="hint" style="margin:-6px 0 10px 0" id="ovMissing"></div>
   <div class="qa-t md-nd">曲库流转（试听库 → 主库）</div>
   <div class="tiles md-nd" id="dbTiles2"></div>
-</div>
-<div class="card" id="histCard">
-  <h2>往期推荐 <span class="sub" id="histSub"></span></h2>
-  <div class="tools"><div class="seg auto" id="hType"></div></div>
-  <div id="histBox" class="sub">加载中…</div>
-  <div class="acts" style="justify-content:center"><button class="ghost hide" id="histMore" onclick="histMore()">加载更多</button></div>
 </div>
 <details class="card lbset md-nd" id="maint">
   <summary><b>维护操作</b> <span class="sub">转正 / 清理 / 同步索引 / 红心同步（一般由定时任务自动完成）</span></summary>
@@ -266,23 +277,23 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="hint md-nd" style="margin:8px 0 0 0">「同步索引」只读取 Navidrome 更新本地曲库索引；「扫描并同步索引」会先让 Navidrome 扫描文件（手动移动过文件后用它）。红心同步会真实写入 ListenBrainz，建议先预览。</div>
   </div>
 </details>
+</div>
+<div class="jv hide" id="jv-hist">
+<div class="card" id="histCard">
+  <h2>往期推荐 <span class="sub" id="histSub"></span></h2>
+  <div class="tools"><div class="seg auto" id="hType"></div></div>
+  <div id="histBox" class="sub">加载中…</div>
+  <div class="acts" style="justify-content:center"><button class="ghost hide" id="histMore" onclick="histMore()">加载更多</button></div>
+</div>
+</div>
+<div class="jv hide" id="jv-dl">
 <div class="card">
-  <h2>任务记录 <span class="sub" id="jobsTotal"></span>
+  <h2>下载任务 <span class="sub" id="jobsTotal"></span>
     <button class="ghost sm" style="margin-left:auto" onclick="refreshJobsTab()">刷新</button></h2>
-  <div class="tools">
-    <div class="seg auto" id="jKind"><button data-v="all" class="on">全部</button><button data-v="lb">推荐联动</button><button data-v="dl">下载任务</button></div>
-    <div class="seg auto" id="jTrig"><button data-v="" class="on">全部</button><button data-v="manual">手动</button><button data-v="schedule">定时</button></div>
-    <label class="sw"><input type="checkbox" id="jFailed"> 仅看有失败的</label>
-  </div>
-  <div id="runsSec">
-    <h3 class="sec" id="runsHd">推荐联动任务</h3>
-    <div id="runsBox" class="sub">加载中…</div>
-  </div>
-  <div id="jobsSec">
-    <h3 class="sec" id="jobsHd">下载任务</h3>
-    <div id="jobs" class="sub">暂无任务</div>
-    <div class="acts" style="justify-content:center"><button class="ghost hide" id="jMore" onclick="loadJobs(false, true)">加载更多</button></div>
-  </div>
+  <div class="hint" style="margin:0 0 8px 0">「手动下载」页里下载歌单 / 专辑、以及定时下载任务的记录（上面「任务记录」页里的「手动 / 定时」「仅看有失败的」筛选同样作用于这里）。</div>
+  <div id="jobs" class="sub">暂无任务</div>
+  <div class="acts" style="justify-content:center"><button class="ghost hide" id="jMore" onclick="loadJobs(false, true)">加载更多</button></div>
+</div>
 </div>
 </div>
 <!-- ============ 推荐 ============ -->
@@ -307,6 +318,7 @@ pre.rlog .W{color:var(--warn)}pre.rlog .E{color:var(--err)}
   <div class="acts"><button onclick="showTab('set')">去设置</button></div>
 </div>
 
+<div class="taskbar hide" id="recTask"></div>
 <div class="card hide" id="todoCard">
   <h2>需要你处理 <span class="sub" id="todoSum"></span></h2>
   <div class="todo" id="todoList"></div>
@@ -807,7 +819,7 @@ async function recLoad() {
   if (tab !== 'rec') return;
   CUR = d.current; applyMode(d.mode);
   $('recOff').classList.toggle('hide', !d.setup_issue); $('recOffMsg').textContent = d.setup_issue || '';
-  setPending(pendingOf(d)); setBusy(!!d.current_task); todoRefresh();
+  setPending(pendingOf(d)); setBusy(!!d.current_task); renderTaskBar(d, false); todoRefresh();
   if (!CUR.some(x => x.type === lstType)) { lstType = CUR[0].type; lstPin = null; lstState = ''; }
   $('lstType').innerHTML = CUR.map(x => `<button data-v="${esc(x.type)}" class="${x.type === lstType ? 'on' : ''}" title="${esc(x.batch_id ? x.date : periodWord(x.type) + '还没有')}">${esc(x.label)}<span class="cnt">${x.batch_id ? x.total : '无'}</span></button>`).join('');
   const cur = CUR.find(x => x.type === lstType), inf = REC_INFO[lstType];
@@ -823,20 +835,20 @@ async function recLoad() {
 $('lstType').onclick = e => { const b = e.target.closest('button'); if (b) { lstType = b.dataset.v; lstPin = null; lstState = ''; recLoad(); } };
 // 直达某一批（待处理卡片、往期推荐的「查看」）；不是当前周期的那份会在列表上方提示
 function openList(type, batchId, state) { lstType = type; lstPin = batchId || null; lstState = state || ''; if (tab === 'rec') recLoad(); else showTab('rec'); }
-function goHist(type) { histType = type; showTab('jobs'); setTimeout(() => $('histCard').scrollIntoView && $('histCard').scrollIntoView({block: 'start'}), 150); }
+function goHist(type) { histType = type; jView = 'hist'; try { localStorage.setItem('jView', 'hist'); } catch (e) {} showTab('jobs'); setTimeout(() => $('histCard').scrollIntoView && $('histCard').scrollIntoView({block: 'start'}), 150); }
 
 /* ---- 记录页：概览 + 往期推荐 + 维护操作 + 任务记录 ---- */
 let ovBusy = false, histType = '', histLimit = 30;
 async function ovLoad() {
   let d;
   try { d = await api('/api/lb/dashboard'); } catch (e) { toast(e.message); return; }
-  if (tab !== 'jobs') return;
-  const was = ovBusy; ovBusy = !!d.current_task;
-  renderOverview(d); if (was && !ovBusy) histLoad();
+  if (tab !== 'jobs' || jView !== 'ov') return;
+  ovBusy = !!d.current_task;
+  renderOverview(d);
   api('/api/lb/schedule').then(r => {
     $('dbNext').textContent = r.upcoming.length ? '计划：' + r.upcoming.map(u => `${u.task} ${u.next.slice(5)}`).join('　·　') + `（时区 ${r.timezone}）` : '';
   }).catch(() => {});
-  clearTimeout(ovTimer); ovTimer = setTimeout(() => tab === 'jobs' && ovLoad(), d.current_task ? 3000 : 15000);
+  clearTimeout(ovTimer); ovTimer = setTimeout(() => tab === 'jobs' && jView === 'ov' && ovLoad(), d.current_task ? 3000 : 15000);
 }
 function renderOverview(d) {
   applyMode(d.mode);
@@ -864,7 +876,10 @@ function renderOverview(d) {
   const tile = ([l, v, cls, sub]) => `<div class="tile ${cls}"><b>${v}</b><span>${l}${sub ? ' · ' + sub : ''}</span></div>`;
   $('dbTiles').innerHTML = t1.map(tile).join(''); $('dbTiles2').innerHTML = t2.map(tile).join('');
   $('ovMissing').textContent = miss.length ? `本期还没有：${miss.map(x => x.label).join('、')}（原因见「推荐」页对应列表）` : '';
-  const types = d.current.map(x => [x.type, x.label]);
+  buildHType(d.current);
+}
+function buildHType(cur) {
+  const types = cur.map(x => [x.type, x.label]);
   if ($('hType').dataset.k !== types.join()) {
     $('hType').dataset.k = types.join();
     $('hType').innerHTML = [['', '全部'], ...types].map(([v, l]) => `<button data-v="${esc(v)}" class="${v === histType ? 'on' : ''}">${esc(l)}</button>`).join('');
@@ -873,6 +888,7 @@ function renderOverview(d) {
 $('hType').onclick = e => { const b = e.target.closest('button'); if (b) { histType = b.dataset.v; histLimit = 30; histSeg(); histLoad(); } };
 function histSeg() { document.querySelectorAll('#hType button').forEach(b => b.classList.toggle('on', b.dataset.v === histType)); }
 async function histLoad() {
+  try { buildHType((await api('/api/lb/dashboard')).current); } catch (e) {}        // 推荐来源可能换过：类型按钮每次都按当前来源重建
   let r; try { r = await api(`/api/lb/batches?limit=${histLimit}` + (histType ? '&type=' + histType : '')); } catch (e) { toast(e.message); return; }
   histSeg();
   const bs = r.batches;
@@ -909,14 +925,27 @@ const itemDownload = id => startSyncHere({kind: 'sync', download: true, item_id:
 function setPending(n) { recPending = n; $('recDlTxt').textContent = n ? `下载（${n}）` : '下载'; }
 function toggleSetMenu(e) { e.stopPropagation(); $('setMenu').classList.toggle('hide'); }
 document.addEventListener('click', () => $('setMenu').classList.add('hide'));
+// 推荐页顶部的「任务进行中」提示条：显示在做什么、可直接点进实时日志；任务结束时弹出结果摘要
+function renderTaskBar(d, was) {
+  const c = d.current_task, bar = $('recTask');
+  bar.classList.toggle('hide', !c);
+  if (c) {
+    const trig = c.trigger === 'schedule' ? '定时' : c.trigger === 'queue' ? '下载队列' : '手动';
+    bar.innerHTML = `<span class="dot"></span><b>任务进行中</b><span>${esc(KIND_ZH[c.type] || c.type)}（${trig}）· 开始于 ${esc(fmtTime(c.started_at))}</span>` +
+      (c.id ? `<a class="lnk" href="javascript:void 0" onclick="openRun(${c.id})">查看实时日志 ›</a>` : '');
+  } else if (was && d.last_run) {
+    const lr = d.last_run, ok = lr.status === 'done';
+    toast(`${KIND_ZH[lr.type] || lr.type}${ok ? '完成' : (RUN_ZH[lr.status] || lr.status)}：${statsText(lr.stats) || (ok ? '没有变化' : (lr.summary || ''))}`);
+  }
+}
 // 顶部按钮的状态来自服务器：有任务在跑就禁用（切换标签页再回来也一致）；在推荐歌单页里任务跑完后自动刷新列表
 let hdrBusy = false;
 function setBusy(b) { hdrBusy = b; $('recSyncBtn').disabled = b; $('recDlBtn').disabled = b; }
 async function refreshHeader() {
   let d; try { d = await api('/api/lb/dashboard'); } catch (e) { setBusy(false); return; }
   const was = hdrBusy;
-  setPending(pendingOf(d)); setBusy(!!d.current_task);
-  if (d.current_task) { if (tab === 'rec') recSchedule(3000, refreshHeader); }
+  setPending(pendingOf(d)); setBusy(!!d.current_task); renderTaskBar(d, was);
+  if (d.current_task) { if (tab === 'rec') { recSchedule(3000, refreshHeader); if (lstBatchId) listItems(); } }
   else if (was && tab === 'rec') recLoad();
 }
 // 跳到设置页并展开某一分组（推荐页里的「设置」入口）
@@ -1108,7 +1137,7 @@ async function chooseCand(id, songId) { $('candDlg').close(); await itemAct(id, 
 /* ---- 任务 ---- */
 async function runsLoad() {
   let r; try { r = await api('/api/lb/runs'); } catch (e) { toast(e.message); return; }
-  if (tab !== 'jobs' || jKind === 'dl') return;
+  if (tab !== 'jobs' || jView !== 'runs') return;
   const runs = r.runs.filter(x => (!jTrig || (x.trigger === 'schedule' ? 'schedule' : 'manual') === jTrig) && (!$('jFailed').checked || x.status === 'failed'));
   $('runsBox').innerHTML = runs.map(x => `<div class="run" id="run-${x.id}"><div class="rh" onclick="toggleRun(${x.id})">
       <b>${esc(KIND_ZH[x.type] || x.type)}</b><span class="tag">${x.trigger === 'schedule' ? '定时' : '手动'}</span>
@@ -1116,7 +1145,7 @@ async function runsLoad() {
       <span class="sub" style="flex:1;min-width:160px">${statsHtml(x.stats)}${x.summary ? ' · ' + esc(x.summary) : ''}</span></div>
       <div class="rb ${runOpenId === x.id ? '' : 'hide'}" id="rb-${x.id}"><pre class="rlog" id="rlog-${x.id}"></pre></div></div>`).join('') || '<div class="sub">还没有任务记录</div>';
   if (runOpenId && $('rlog-' + runOpenId)) $('rlog-' + runOpenId).innerHTML = runText;
-  recSchedule(r.current ? 3000 : 15000, () => tab === 'jobs' && runsLoad());
+  recSchedule(r.current ? 3000 : 15000, () => tab === 'jobs' && jView === 'runs' && runsLoad());
 }
 function toggleRun(id) {
   if (runOpenId === id) { runOpenId = null; clearTimeout(runLogTimer); const b = $('rb-' + id); if (b) b.classList.add('hide'); return; }
@@ -1125,7 +1154,7 @@ function toggleRun(id) {
 function openRun(id) {
   if (runOpenId && runOpenId !== id && $('rb-' + runOpenId)) $('rb-' + runOpenId).classList.add('hide');
   runOpenId = id; runText = ''; runAfter = 0;
-  if (tab !== 'jobs') { jKind = 'lb'; syncKind(); showTab('jobs'); setTimeout(() => runLogs(id, true), 500); return; }
+  if (tab !== 'jobs' || jView !== 'runs') { jView = 'runs'; try { localStorage.setItem('jView', 'runs'); } catch (e) {} showTab('jobs'); setTimeout(() => runLogs(id, true), 700); return; }
   const b = $('rb-' + id); if (b) b.classList.remove('hide');
   runLogs(id, true);
 }
@@ -1606,14 +1635,20 @@ async function openJob(id) {
   const el = $('job-' + id); if (el) el.scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 
-let jKind = 'all';
-function syncKind() {
-  document.querySelectorAll('#jKind button').forEach(x => x.classList.toggle('on', x.dataset.v === jKind));
-  $('jobsSec').classList.toggle('hide', jKind === 'lb'); $('runsSec').classList.toggle('hide', jKind === 'dl');
-  $('jobsHd').classList.toggle('hide', jKind !== 'all'); $('runsHd').classList.toggle('hide', jKind !== 'all');
+let jView = 'runs';
+try { const v = localStorage.getItem('jView'); if (['runs', 'ov', 'hist', 'dl'].includes(v)) jView = v; } catch (e) {}
+function jShow(v) {
+  if (v) { jView = v; try { localStorage.setItem('jView', v); } catch (e) {} }
+  ['runs', 'ov', 'hist', 'dl'].forEach(x => $('jv-' + x).classList.toggle('hide', x !== jView));
+  document.querySelectorAll('#jNav button').forEach(b => b.classList.toggle('on', b.dataset.v === jView));
+  clearTimeout(ovTimer); clearTimeout(recTimer);
+  if (jView === 'runs') runsLoad();
+  else if (jView === 'ov') ovLoad();
+  else if (jView === 'hist') histLoad();
+  else loadJobs(true);
 }
-function refreshJobsTab() { ovLoad(); histLoad(); syncKind(); if (jKind !== 'lb') loadJobs(true); if (jKind !== 'dl') runsLoad(); }
-document.querySelectorAll('#jKind button').forEach(b => b.onclick = () => { jKind = b.dataset.v; refreshJobsTab(); });
+function refreshJobsTab() { jShow(); }
+document.querySelectorAll('#jNav button').forEach(b => b.onclick = () => jShow(b.dataset.v));
 document.querySelectorAll('#jTrig button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#jTrig button').forEach(x => x.classList.toggle('on', x === b));
   jTrig = b.dataset.v; refreshJobsTab();

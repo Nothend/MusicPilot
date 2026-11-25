@@ -454,3 +454,26 @@ def test_results_from_all_script_variants_are_merged_without_duplicates(client_f
     a, s = adapter(client_for, tmp_path, {"/音乐/A/罗大佑 - 亚细亚的孤儿.flac": flac_bytes(tmp_path), "/音乐/B/羅大佑 - 亞細亞的孤兒.flac": flac_bytes(tmp_path)})
     r = a.download_song("羅大佑", "亞細亞的孤兒", tmp_path / "o")
     assert r.success and r.tried == 1                                                       # 两种写法的文件都搜到了，选其一即可
+
+
+# ---------------------------------------------------------------- 搜索超时：Meilisearch 冷缓存时第一次查询可能要一两分钟
+def test_search_uses_a_long_timeout_but_other_calls_keep_the_short_one(client_for):
+    seen = []
+    c, s = client_for({"/音乐/a.flac": b"1"})
+    real = s.request
+    s.request = lambda method, url, json=None, headers=None, timeout=None: (seen.append((url.rsplit("/", 1)[1], timeout)), real(method, url, json=json, headers=headers, timeout=timeout))[1]
+    c.search("/音乐", "a"); c.list_dir("/音乐"); c.get("/音乐/a.flac")
+    t = dict(seen)
+    assert t["search"] == 120 and t["list"] == 20 and t["get"] == 20 and t["login"] == 20
+
+
+def test_a_search_timeout_is_a_retryable_error_not_not_found(client_for, tmp_path):
+    import requests
+    c, s = client_for({})
+    c.login()
+    s.request = lambda *a, **k: (_ for _ in ()).throw(requests.ReadTimeout("slow"))
+    with pytest.raises(OpenListError) as e:
+        c.search("/音乐", "a")
+    assert e.value.kind == "network" and "超过 120 秒" in str(e.value) and "重试" in str(e.value)
+    r = oc.OpenListAdapter(c, "/音乐", sleep=lambda x: None).download_song("A", "B", tmp_path / "o")
+    assert r.error_kind == "api" and not r.success                                   # 可重试，不会被记成「未找到」进冷却

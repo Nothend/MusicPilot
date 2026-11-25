@@ -28,6 +28,7 @@ from fsutil import safe_move
 from lb_adapter import AdapterResult, validate_audio
 from lb_localfs import safe_component
 from lb_review import describe
+from zh import simplify
 from lb_settings import REVIEW_DIRNAME, STAGING_DIRNAME
 from matcher import Target
 from openlist_client import OpenListClient, OpenListError
@@ -206,7 +207,7 @@ class OpenListAdapter:
         for f in ranked[: self.max_candidates]:
             tried += 1
             ext = Path(f["name"]).suffix.lower()
-            staged = staging / (safe_component(f"{artist} - {title}") + ext)
+            staged = staging / (safe_component(f"{simplify(artist)} - {simplify(title)}") + ext)
             self._unlink(staged)
             try:
                 self.client.download(f["path"], staged)
@@ -298,9 +299,10 @@ class OpenListAdapter:
                 cover = (self.fetch_cover or _default_cover)(g("pic_url"))
             except Exception:
                 cover = None
-        proposed = {"artist": artist, "artists": list(artists) or [artist], "title": title, "album": album or g("album"),
-                    "date": g("publishTime"), "lyric": g("lyric"), "recording_mbid": recording_mbid or g("recording_mbid"),
-                    "release_mbid": g("release_mbid"), "has_cover": bool(cover)}
+        from lb_review import simplified_proposal      # ListenBrainz / MusicBrainz 的中文多是繁体：写入前统一成简体
+        proposed = simplified_proposal({"artist": artist, "artists": list(artists) or [artist], "title": title, "album": album or g("album"),
+                                        "date": g("publishTime"), "lyric": g("lyric"), "recording_mbid": recording_mbid or g("recording_mbid"),
+                                        "release_mbid": g("release_mbid"), "has_cover": bool(cover)})
         if cover:
             from lb_review import _thumb
             proposed["cover_thumb"] = _thumb(cover)

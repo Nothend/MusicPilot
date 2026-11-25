@@ -34,6 +34,16 @@ MAX_VALUE_CHARS = 300
 THUMB_PX = 160
 
 
+def simplified_proposal(p: Dict[str, Any]) -> Dict[str, Any]:
+    """推荐写入的内容里，中文一律转简体（页面显示与实际写入用同一份，所以对话框里看到的就是会写的）。"""
+    from zh import simplify
+    q = dict(p)
+    for k in ("artist", "title", "album", "lyric"):
+        q[k] = simplify(p.get(k, "") or "")
+    q["artists"] = [simplify(a) for a in (p.get("artists") or [])]
+    return q
+
+
 # ---------------------------------------------------------------- 读：文件里现有的标签
 def _thumb(data: bytes) -> str:
     """缩略图（data URI），供页面直接显示；解码失败返回空串。"""
@@ -77,6 +87,7 @@ def describe(path: Path) -> Dict[str, Any]:
 # ---------------------------------------------------------------- 写：重写 / 补缺
 def rewrite_tags(path: Path, p: Dict[str, Any], cover: Optional[bytes]) -> None:
     """清空所有原有标签与图片，只写入 p 里的白名单字段。"""
+    p = simplified_proposal(p)
     artists = [a for a in (p.get("artists") or []) if a] or [p.get("artist", "")]
     fields = {"ARTIST": artists, "TITLE": [p.get("title", "")], "ALBUM": [p.get("album", "")],
               "DATE": [p.get("date", "")], "YEAR": [(p.get("date", "") or "").split("-")[0]],
@@ -176,7 +187,7 @@ def run_review(d: ReviewDeps) -> Dict[str, Any]:
         rewrite_tags(held, data["proposed"], cover)
         h.add("review_rewritten")
     else:
-        pr = data["proposed"]
+        pr = simplified_proposal(data["proposed"])
         fill_tags(held, pr.get("artist", ""), pr.get("title", ""), pr.get("album", ""), pr.get("artists") or [],
                   None, None, pr.get("recording_mbid", ""))
         h.add("review_kept")
